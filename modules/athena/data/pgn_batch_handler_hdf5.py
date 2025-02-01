@@ -25,27 +25,33 @@ def process_game(moves, game_id, engine_path, move_vocab, queue, max_sequence_le
             move_index = move_vocab.get(move, 0)  # Default to 0 for unknown moves
             move_history_indices = move_to_index(move_history, move_vocab, max_sequence_length)
 
+            # Generate legal move mask (64x64)
+            legal_moves_mask = np.zeros((64, 64), dtype=np.int8)
+            for legal_move in board.legal_moves:
+                from_sq = legal_move.from_square
+                to_sq = legal_move.to_square
+                legal_moves_mask[from_sq, to_sq] = 1
+
             game_data.append({
                 "fen_tensor": fen_tensor,
                 "move_history": move_history_indices,
                 "evaluation": score / 100.0,
-                "move_index": move_index
+                "move_index": move_index,
+                "legal_moves_mask": legal_moves_mask
             })
 
             move_history.append(move)
             board.push(chess.Move.from_uci(move))
 
-    # Send processed data to the writer process via the queue
     queue.put(game_data)
-
     gc.collect()
-    return True  # or any marker to indicate the job is done
+    return True
+
 
 def hdf5_writer(queue):
     with h5py.File(HDF5_FILE, "w", libver="latest") as hf:
-        hf.swmr_mode = True  # Enable SWMR mode
+        hf.swmr_mode = True
 
-        # Initialize HDF5 datasets with unlimited size
         hf.create_dataset("fens", shape=(0, 8, 8, 20),
                           maxshape=(None, 8, 8, 20), dtype=np.float32)
         hf.create_dataset("move_histories", shape=(0, 50),
@@ -54,22 +60,23 @@ def hdf5_writer(queue):
                           maxshape=(None,), dtype=np.float32)
         hf.create_dataset("move_indices", shape=(0,),
                           maxshape=(None,), dtype=np.int32)
+        hf.create_dataset("legal_moves_mask", shape=(0, 64, 64),
+                          maxshape=(None, 64, 64), dtype=np.int8)
 
         while True:
             game_data = queue.get()
             if game_data is None:
                 break  # Stop if None is received (signal to terminate)
             
-            # >>> Skip writing if there's no data <<<
-            if not game_data:  
+            if not game_data:
                 continue
 
             fens = np.array([data["fen_tensor"] for data in game_data], dtype=np.float32)
             move_histories = np.array([data["move_history"] for data in game_data], dtype=np.int32)
             evaluations = np.array([data["evaluation"] for data in game_data], dtype=np.float32)
             move_indices = np.array([data["move_index"] for data in game_data], dtype=np.int32)
+            legal_moves = np.array([data["legal_moves_mask"] for data in game_data], dtype=np.int8)
 
-            # Resize and write to HDF5
             hf["fens"].resize(hf["fens"].shape[0] + fens.shape[0], axis=0)
             hf["fens"][-fens.shape[0]:] = fens
 
@@ -82,6 +89,10 @@ def hdf5_writer(queue):
             hf["move_indices"].resize(hf["move_indices"].shape[0] + move_indices.shape[0], axis=0)
             hf["move_indices"][-move_indices.shape[0]:] = move_indices
 
+            hf["legal_moves_mask"].resize(hf["legal_moves_mask"].shape[0] + legal_moves.shape[0], axis=0)
+            hf["legal_moves_mask"][-legal_moves.shape[0]:] = legal_moves
+
+
 def extract_games_from_pgn(pgn_file):
     games = []
     with open(pgn_file) as pgn:
@@ -93,12 +104,14 @@ def extract_games_from_pgn(pgn_file):
             games.append(moves)
     return games
 
+
 def process_game_wrapper(args):
     """
     Simple wrapper to unpack arguments and call process_game.
     This lets us use pool.imap_unordered(...), which plays nicely with tqdm.
     """
     return process_game(*args)
+
 
 def process_pgn_in_parallel(pgn_file, engine_path, move_vocab, num_workers=cpu_count()):
     print(f"Processing {pgn_file}...")
@@ -127,6 +140,7 @@ def process_pgn_in_parallel(pgn_file, engine_path, move_vocab, num_workers=cpu_c
     queue.put(None)
     writer_process.join()
     print(f"Completed processing {pgn_file}")
+
 
 def main():
     if os.path.exists(HDF5_FILE):

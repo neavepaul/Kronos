@@ -1,0 +1,7 @@
+chess
+colorama
+h5py
+numpy
+pip
+setuptools
+tqdm
