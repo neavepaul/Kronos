@@ -4,4 +4,5 @@ __pycache__/
 scratch.txt
 pgn_files/
 stockfish/
-Nakamura_training_data.json
+archive/
+training_data
