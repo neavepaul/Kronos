@@ -1,6 +1,11 @@
-import numpy as np
 import json
 import os
+import h5py
+import json
+import numpy as np
+import tensorflow as tf
+
+HDF5_FILE = "training_data/training_data.hdf5"
 
 def fen_to_tensor(fen):
     """
@@ -58,23 +63,32 @@ def fen_to_tensor(fen):
     return full_tensor
 
 
-# Build move vocabulary from multiple JSONs
-def build_move_vocab(json_dir):
+
+def build_move_vocab(hdf5_file=HDF5_FILE):
+    """
+    Builds a move vocabulary from an HDF5 dataset instead of JSON.
+    """
     moves = set()
-    for json_file in os.listdir(json_dir):
-        if json_file.endswith(".json"):
-            with open(os.path.join(json_dir, json_file), "r") as f:
-                games = json.load(f)
-                for game in games:
-                    for position in game:
-                        moves.add(position["move"])
-    
+
+    # Open HDF5 file and read move indices
+    with h5py.File(hdf5_file, "r") as hf:
+        move_indices = hf["move_indices"][:]  # Load all move indices
+
+    # Convert move indices to UCI notation (Assuming index → move mapping exists)
+    for move_idx in move_indices:
+        # If move_idx is valid (not padding), add it to the move set
+        if move_idx > 0:
+            moves.add(str(move_idx))  # Store as a string (same format as before)
+
+    # Assign each unique move an index
     move_vocab = {move: idx+1 for idx, move in enumerate(sorted(moves))}
-    
+
+    # Save vocabulary to JSON
     with open("move_vocab.json", "w") as f:
         json.dump(move_vocab, f)
-    
+
     return move_vocab
+
 
 # Convert move sequence to indexed list
 def move_to_index(move_history, move_vocab, max_sequence_length=50):
@@ -92,3 +106,26 @@ def move_to_index(move_history, move_vocab, max_sequence_length=50):
         indexed_moves = indexed_moves[-max_sequence_length:]
 
     return np.array(indexed_moves, dtype=np.int32)  # Ensure NumPy array
+
+
+
+class ChessDataGenerator(tf.keras.utils.Sequence):
+    def __init__(self, hdf5_path, batch_size=32, shuffle=True):
+        self.h5 = h5py.File(hdf5_path, 'r')
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.indexes = np.arange(len(self.h5['targets']))
+        
+    def __getitem__(self, idx):
+        batch_idx = self.indexes[idx*self.batch_size:(idx+1)*self.batch_size]
+        fens = self.h5['fens'][batch_idx]
+        histories = self.h5['move_history'][batch_idx]
+        masks = self.h5['legal_masks'][batch_idx]
+        targets = self.h5['targets'][batch_idx]
+        
+        # Convert to one-hot
+        target_moves = np.zeros((self.batch_size, 64, 64))
+        for i, (frm, to) in enumerate(targets):
+            target_moves[i, frm, to] = 1
+            
+        return [fens, histories, masks], [target_moves, masks]
