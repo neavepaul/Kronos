@@ -1,62 +1,55 @@
+import tensorflow as tf
 import h5py
 import numpy as np
-import tensorflow as tf
+import json
 
-HDF5_FILE = "training_data/training_data.hdf5"
-MAX_MOVE_HISTORY = 50  # Fixed move history length
+with open("move_vocab.json", "r") as f:
+    move_vocab = json.load(f)
+
+def move_to_index(move_history, move_vocab, max_sequence_length=50):
+    indexed_moves = [move_vocab.get(move.decode("ascii"), 0) for move in move_history] 
+
+    if len(indexed_moves) < max_sequence_length:
+        indexed_moves = [0] * (max_sequence_length - len(indexed_moves)) + indexed_moves
+    else:
+        indexed_moves = indexed_moves[-max_sequence_length:]
+
+    return np.array(indexed_moves, dtype=np.int32)
 
 class HDF5DataGenerator(tf.keras.utils.Sequence):
-    """
-    Data generator that loads training data from an HDF5 file in batches.
-    """
-
-    def __init__(self, batch_size=32, shuffle=True, move_vocab=None):
+    def __init__(self, batch_size=32, shuffle=True):
         self.batch_size = batch_size
         self.shuffle = shuffle
-        self.h5_file = h5py.File(HDF5_FILE, "r")
+        self.h5_file = h5py.File("training_data/training_data.hdf5", "r")
         self.num_samples = self.h5_file["fens"].shape[0]
         self.indexes = np.arange(self.num_samples)
         if self.shuffle:
             np.random.shuffle(self.indexes)
 
-        # Use provided move_vocab StringLookup layer (from model)
-        self.move_vocab = move_vocab
-
     def __len__(self):
-        return self.num_samples // self.batch_size
+        """ Returns the number of batches per epoch """
+        return int(np.floor(self.num_samples / self.batch_size))  # ✅ Fix: Add this method!
 
     def __getitem__(self, idx):
-        batch_indexes = self.indexes[idx * self.batch_size:(idx + 1) * self.batch_size]
-        batch_indexes = np.sort(batch_indexes)  # **Fix: Reduce HDF5 access lag**
+        batch_indexes = np.sort(self.indexes[idx * self.batch_size:(idx + 1) * self.batch_size])
 
-        # Load batch data from HDF5
         fens = np.array(self.h5_file["fens"][batch_indexes], dtype=np.float32)
-        move_histories = np.array(self.h5_file["move_histories"][batch_indexes], dtype="S6")  # Strings (PFFTTT)
+        move_histories = np.array(self.h5_file["move_histories"][batch_indexes], dtype="S6")
+        turn_indicators = np.array(self.h5_file["turn_indicator"][batch_indexes], dtype=np.float32).reshape(-1, 1)
+        eval_scores = np.array(self.h5_file["eval_score"][batch_indexes], dtype=np.float32).reshape(-1, 1)
         legal_moves_mask = np.array(self.h5_file["legal_moves_mask"][batch_indexes], dtype=np.float32)
-        eval_scores = np.array(self.h5_file["eval_score"][batch_indexes], dtype=np.float32).reshape(-1, 1)  # (batch, 1)
-        next_moves = np.array(self.h5_file["next_move"][batch_indexes], dtype="S6")  # Next move (PFFTTT)
 
-        # Convert move histories and next moves from byte strings -> normal strings
-        move_histories = np.char.decode(move_histories, "ascii")
-        next_moves = np.char.decode(next_moves, "ascii")
+        move_histories = np.array([move_to_index(history, move_vocab) for history in move_histories], dtype=np.int32)
 
-        # Convert move sequences into indexed integer format
-        move_histories = self.move_vocab(move_histories)
-        next_moves = self.move_vocab(next_moves)  # Convert labels into integer indices
-
-        return (
-            {
-                "fen_input": tf.convert_to_tensor(fens),
-                "move_seq": tf.convert_to_tensor(move_histories),
-                "legal_mask": tf.convert_to_tensor(legal_moves_mask),
-                "eval_score": tf.convert_to_tensor(eval_scores),
-            },
-            {
-                "move_probs": tf.one_hot(next_moves, depth=700000),  # One-hot encode next move
-                "criticality": tf.zeros((self.batch_size, 1), dtype=tf.float32),  # Placeholder for now
-            }
-        )
+        return {
+            "fen_input": fens,
+            "move_seq": move_histories,
+            "turn_indicator": turn_indicators,
+            "legal_mask": legal_moves_mask,
+            "eval_score": eval_scores
+        }, None
 
     def on_epoch_end(self):
+        """ Shuffles the dataset at the end of each epoch if enabled """
         if self.shuffle:
             np.random.shuffle(self.indexes)
