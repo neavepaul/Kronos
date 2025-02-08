@@ -17,7 +17,8 @@ def move_to_index(move_history, move_vocab, max_sequence_length=50):
     return np.array(indexed_moves, dtype=np.int32)
 
 class HDF5DataGenerator(tf.keras.utils.Sequence):
-    def __init__(self, batch_size=32, shuffle=True):
+    def __init__(self, batch_size=32, shuffle=True, **kwargs):
+        super().__init__(**kwargs)  # ✅ FIX: Call `super()` properly
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.h5_file = h5py.File("training_data/training_data.hdf5", "r")
@@ -27,10 +28,11 @@ class HDF5DataGenerator(tf.keras.utils.Sequence):
             np.random.shuffle(self.indexes)
 
     def __len__(self):
-        """ Returns the number of batches per epoch """
-        return int(np.floor(self.num_samples / self.batch_size))  # ✅ Fix: Add this method!
+        """ ✅ Returns the number of batches per epoch """
+        return int(np.floor(self.num_samples / self.batch_size))
 
     def __getitem__(self, idx):
+        """ ✅ Returns a batch of data """
         batch_indexes = np.sort(self.indexes[idx * self.batch_size:(idx + 1) * self.batch_size])
 
         fens = np.array(self.h5_file["fens"][batch_indexes], dtype=np.float32)
@@ -47,9 +49,12 @@ class HDF5DataGenerator(tf.keras.utils.Sequence):
             "turn_indicator": turn_indicators,
             "legal_mask": legal_moves_mask,
             "eval_score": eval_scores
-        }, None
+        }, {
+            "move_output": np.zeros((self.batch_size, 6)),  # ✅ Dummy labels to prevent `NoneType` error
+            "criticality": np.zeros((self.batch_size, 1))
+        }
 
     def on_epoch_end(self):
-        """ Shuffles the dataset at the end of each epoch if enabled """
+        """ ✅ Shuffles dataset at the end of each epoch """
         if self.shuffle:
             np.random.shuffle(self.indexes)
