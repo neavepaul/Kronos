@@ -78,6 +78,8 @@ Communication between modules is facilitated by ZeroMQ, enabling parallel proces
 -   [ ] Develop unit tests for all modules
 -   [ ] Benchmark parallel processing between Ares and Hades
 -   [ ] Train and deploy lightweight neural network for Athena
+-   [ ] Actor critic for RL
 -   [ ] Quantisation FP16 and ONNX
 -   [ ] Set up caching for frequent tablebase queries in Hades
 -   [ ] Adaptive Move Vocabulary for Athena: Forget & Learn System (cap the vocabulary at 500,000 moves and let Athena dynamically forget useless moves while learning new ones in RL)
+-   [ ] Stofish 17 ARMv8 Dot Product at Zeus

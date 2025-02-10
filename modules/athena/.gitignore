@@ -7,3 +7,7 @@ stockfish/
 archive/
 training_data
 models
+old_models
+tuning
+wandb
+logs

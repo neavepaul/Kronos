@@ -1,0 +1,47 @@
+%%{init: {'theme': 'dark', 'themeVariables': { 'textColor': '#FFF' }}}%%
+graph TD
+    %% Inputs
+    FEN["FEN Tensor (8x8x20)"] --> Athena
+    MoveHistory["Move History Sequence"] --> Athena
+    LegalMask["Legal Move Mask (64x64)"] --> Athena
+    Color["Color Flag (White/Black)"] --> Athena
+
+    %% Athena Core Processing
+    subgraph Athena[Athena Model]
+        direction TB
+        Encoder[Spatial Encoder CNN + Transformer] --> FromEmbed["From Square Embeddings (64x128)"]
+        Encoder --> ToEmbed["To Square Embeddings (64x128)"]
+        MoveHistEnc[Move History Encoder LSTM] --> Context[Context Vector]
+        
+        FromEmbed --> ScoreMatrix["Score Matrix (64x64) Dot Product"]
+        ToEmbed --> ScoreMatrix
+        Context --> ScoreMatrix
+        
+        ScoreMatrix --> Criticality[Criticality Score Branch MLP]
+        ScoreMatrix --> Masking[Masking & Softmax]
+    end
+
+    %% Ares Interaction
+    Criticality -- Critical Moves\n(Score > 0.7)--> Ares[Ares Search Module]
+    Ares -->|Refined Scores| Adjust[Probability Adjustment]
+    Masking --> Adjust
+
+    %% Output
+    Adjust --> MoveSel[Move Selection]
+    Adjust --> Promotion[Promotion Handler Queen/Knight/Rook/Bishop]
+    MoveSel --> FinalMove[Final Move Choice]
+
+    %% Training
+    PGN[PGN Database] -->|Supervised| SL[Supervised Learning Cross-Entropy]
+    Stockfish[Stockfish Engine] -->|Rewards| RL[Reinforcement Learning Policy Gradients]
+    SL --> Athena
+    RL --> Athena
+
+    %% System Context
+    Zeus[Zeus Orchestrator] -->|Game State| Athena
+    Athena -->|Move Proposal| Zeus
+    Ares <--> Zeus
+    
+    style Athena fill:#2c3e50,stroke:#3498db
+    style Ares fill:#34495e,stroke:#e74c3c
+    style Zeus fill:#27ae60,stroke:#2ecc71x
