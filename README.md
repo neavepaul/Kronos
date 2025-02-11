@@ -74,6 +74,9 @@ Communication between modules is facilitated by ZeroMQ, enabling parallel proces
 -   [x] Implement Athena (Evaluation Module)
 -   [ ] Implement Ares (Search Module)
 -   [ ] Implement Hades (Tablebase Module)
+-   [ ] Download 345
+-   [ ] Download select 6 and 7
+-   [ ] cleanup some 345 based on 6 and 7
 -   [ ] Train and deploy lightweight neural network for Athena
 -   [ ] Actor critic for RL
 -   [ ] Quantisation FP16 and ONNX

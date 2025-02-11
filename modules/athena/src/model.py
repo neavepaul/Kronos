@@ -3,9 +3,19 @@ from tensorflow.keras import Model, layers
 
 MAX_VOCAB_SIZE = 500000
 
+import tensorflow as tf
+from tensorflow.keras import Model, layers
+
+MAX_VOCAB_SIZE = 500000
+
 class TransformerBlock(layers.Layer):
-    def __init__(self, embed_dim, num_heads, ff_dim, rate=0.1):
-        super(TransformerBlock, self).__init__()
+    def __init__(self, embed_dim, num_heads, ff_dim, rate=0.1, **kwargs):
+        super(TransformerBlock, self).__init__(**kwargs)  # ✅ Allow extra arguments like 'trainable'
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.ff_dim = ff_dim
+        self.rate = rate
+
         self.att = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
         self.ffn = tf.keras.Sequential([
             layers.Dense(ff_dim, activation="gelu"),
@@ -23,6 +33,23 @@ class TransformerBlock(layers.Layer):
         ffn_output = self.ffn(out1)
         ffn_output = self.dropout2(ffn_output, training=training)
         return self.layernorm2(out1 + ffn_output)
+
+    def get_config(self):
+        """ ✅ Ensures the layer can be properly saved & loaded """
+        config = super().get_config()
+        config.update({
+            "embed_dim": self.embed_dim,
+            "num_heads": self.num_heads,
+            "ff_dim": self.ff_dim,
+            "rate": self.rate
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        """ ✅ Ensures the layer is reconstructed correctly """
+        return cls(**config)
+
 
 def get_model(num_transformers=4, embed_dim=128, dropout_rate=0.2, learning_rate=3e-4):
     # Inputs

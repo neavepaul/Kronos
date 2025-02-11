@@ -85,11 +85,15 @@ def build_move_vocab(hdf5_file=HDF5_FILE):
 
 
 ### ✅ 3️⃣ Convert Move Sequences to Indexed List
-def move_to_index(move_history, move_vocab, max_sequence_length=MAX_MOVE_HISTORY):
+def move_to_index(move_history, move_vocab, max_sequence_length=50):
     """
     Converts a sequence of PFFTTU moves into indexed representation with padding.
     """
-    indexed_moves = [move_vocab.get(move.decode("ascii"), 0) for move in move_history]  
+    if isinstance(move_history, str):  
+        move_history = [move_history]  # Convert single move to a list
+    
+    # ✅ Ensure each move is a string (handles NumPy scalars)
+    indexed_moves = [move_vocab.get(str(move), 0) for move in move_history]
 
     if len(indexed_moves) < max_sequence_length:
         indexed_moves = [0] * (max_sequence_length - len(indexed_moves)) + indexed_moves
@@ -122,4 +126,4 @@ def index_to_move(indexed_moves, move_vocab):
 
 
 
-build_move_vocab()
+# build_move_vocab()
