@@ -17,7 +17,7 @@ STOCKFISH_PATH_2 = "stockfish/stockfish-windows-x86-64-avx2.exe"
 MODEL_PATH = "models/athena_gm_trained_20250211_090344_10epochs.keras"
 model = tf.keras.models.load_model(
     MODEL_PATH,
-    custom_objects={"TransformerBlock": TransformerBlock}  # ✅ Register custom layer
+    custom_objects={"TransformerBlock": TransformerBlock}  # Register custom layer
 )
 
 # Load move vocabulary

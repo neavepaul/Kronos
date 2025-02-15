@@ -61,13 +61,13 @@ early_stopping = EarlyStopping(
     restore_best_weights=True
 )
 
-# ✅ Add Loss Logging Callback
+# Add Loss Logging Callback
 loss_logger = LossLoggerCallback()
 
 # Train Model
 model.fit(train_generator, epochs=EPOCHS, callbacks=[checkpoint_callback, early_stopping, loss_logger])
 
-# ✅ Save Final Model
+# Save Final Model
 model.save(MODEL_SAVE_PATH)
 
 print(f"Model saved at: {MODEL_SAVE_PATH}")

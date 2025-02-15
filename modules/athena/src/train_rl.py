@@ -1,121 +1,122 @@
-# train_rl.py
-import os
+import tensorflow as tf
+import numpy as np
 import chess
 import chess.engine
-import numpy as np
-import tensorflow as tf
+import random
+import json
 from model import get_model
-from q_network import QNetwork
-from actor_critic import ActorCritic
-from data_generator import HDF5DataGenerator
+from reward_function import compute_reward
+from dqn import DQN, train_dqn
+from replay_buffer import init_replay_buffer
+from utils import fen_to_tensor, move_to_index, build_move_vocab
 
+# Load move vocabulary
+MAX_VOCAB_SIZE = 500000
+
+# move_vocab = build_move_vocab("move_vocab.json")
+with open("move_vocab.json", "r") as f:
+    move_vocab = json.load(f)
+
+# Paths
 STOCKFISH_PATH = "stockfish/stockfish-windows-x86-64-avx2.exe"
-BATCH_SIZE = 64
-EPOCHS = 20
-MODEL_SAVE_PATH = "models/athena_rl_trained.h5"
+MODEL_SAVE_PATH = "models/athena_gm_trained_20250211_090344_10epochs.keras"
 
-os.makedirs("models", exist_ok=True)
+# RL Hyperparameters
+LEARNING_RATE = 1e-4
+GAMMA = 0.99  # Discount factor for rewards
+EPSILON = 0.1  # Exploration rate for epsilon-greedy policy
+BATCH_SIZE = 32
+EPOCHS = 5
 
-# Load Athena (Pretrained on GM Data)
-athena = get_model()
-athena.load_weights("models/athena_gm_trained.h5")
+# Load Athena Model
+input_shape = (8, 8, 20)
+action_size = 64 * 64
+dqn_model = DQN(input_shape, action_size)
 
-# Load Q-Network & Actor-Critic
-q_network = QNetwork()
-actor_critic = ActorCritic()
+# Experience Replay Buffer
+replay_buffer = init_replay_buffer()
 
-# Define Optimizers
-q_optimizer = tf.keras.optimizers.Adam(learning_rate=3e-4)
-ac_optimizer = tf.keras.optimizers.Adam(learning_rate=3e-4)
+# Adaptive Move Vocabulary Management
+def update_move_vocab(move):
+    """Dynamically updates the move vocabulary, forgetting less useful moves."""
+    if move not in move_vocab:
+        if len(move_vocab) >= MAX_VOCAB_SIZE:
+            least_used_move = min(move_vocab, key=move_vocab.get)
+            del move_vocab[least_used_move]  # Remove least useful move
+        move_vocab[move] = 1  # Add new move
+    else:
+        move_vocab[move] += 1  # Increase usage count
 
-def evaluate_board(board, engine):
-    """Returns Stockfish evaluation score from White's perspective."""
-    result = engine.analyse(board, chess.engine.Limit(depth=10))
-    return result["score"].relative.score(mate_score=10000) if result["score"].relative else 0  
+    # Save updated move vocabulary
+    with open("move_vocab.json", "w") as f:
+        json.dump(move_vocab, f, indent=4)
 
-def rl_loss(y_true, y_pred, white_to_move):
-    delta_score = y_true - y_pred
-    return tf.reduce_mean(tf.where(white_to_move, -delta_score, delta_score))
 
-def train_rl():
-    with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
-        train_generator = HDF5DataGenerator(batch_size=BATCH_SIZE)
+def play_game():
+    """Plays a game between Athena and Stockfish while collecting training data."""
+    board = chess.Board()
+    engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+    move_history = []
 
-        for epoch in range(EPOCHS):
-            print(f"\n🚀 RL Training Epoch {epoch + 1}/{EPOCHS}...\n")
-            total_loss = 0
+    move_history_encoded = np.zeros((50,), dtype=np.int32)  # Initialize empty move history
+    legal_moves_mask = np.zeros((64, 64), dtype=np.int8)  # Initialize legal moves mask
 
-            for batch in train_generator:
-                inputs, _ = batch
-                fens, move_histories, legal_moves_mask, eval_scores = inputs.values()
-                batch_size = fens.shape[0]
-                batch_loss = 0
+    while not board.is_game_over():
+        fen = board.fen()
+        turn_indicator = np.array([1 if board.turn == chess.WHITE else 0], dtype=np.float32)
 
-                for i in range(batch_size):
-                    board = chess.Board()
-                    board.set_fen(fens[i])
+        # Update legal move mask for the current position
+        legal_moves_mask = np.zeros((64, 64), dtype=np.int8)
+        for legal_move in board.legal_moves:
+            legal_moves_mask[legal_move.from_square, legal_move.to_square] = 1
 
-                    # ✅ **Athena Predicts a Move**
-                    pred_move_pffttu, criticality = athena.predict({
-                        "fen_input": fens[i:i+1],
-                        "move_seq": move_histories[i:i+1],
-                        "legal_mask": legal_moves_mask[i:i+1],
-                        "eval_score": eval_scores[i:i+1]
-                    })
+        # Ensure eval_before is always valid
+        try:
+            eval_before = engine.analyse(board, chess.engine.Limit(depth=10))["score"].relative.score(mate_score=10000) / 100.0
+        except Exception:
+            eval_before = 0.0
 
-                    # Convert PFFTTU Move Format → Chess Move
-                    try:
-                        piece, from_square, to_square, _, _, upgrade = pred_move_pffttu[0]
-                        move = chess.Move(from_square, to_square, promotion=upgrade)
-                        if not board.is_legal(move):
-                            continue
-                    except:
-                        continue
+        # Ensure move history is initialized correctly
+        fen_tensor = np.expand_dims(fen_to_tensor(fen), axis=0)
+        move_history_encoded = np.array(move_to_index(move_history, move_vocab), dtype=np.int32).reshape(1, 50)  # Correct Shape (1, 50)
+        legal_moves_mask = np.expand_dims(legal_moves_mask, axis=0)  # Expands to (1, 64, 64)
+        turn_indicator = np.expand_dims(np.array([turn_indicator], dtype=np.float32), axis=0)  # Expands to (1, 1)
+        eval_before = np.expand_dims(np.array([eval_before], dtype=np.float32), axis=0)  # Expands to (1, 1)
 
-                    board.push(move)
+        # Athena Move Selection
+        q_values = dqn_model([fen_tensor, move_history_encoded, legal_moves_mask, eval_before, turn_indicator])
 
-                    # ✅ **Q-Network Move Evaluation**
-                    q_values = q_network(fens[i:i+1])
-                    best_move_index = np.argmax(q_values.numpy())
-                    chosen_q_value = q_values.numpy()[0, best_move_index]
+        if random.random() < EPSILON:
+            athena_move = random.choice(list(board.legal_moves))  # Explore
+        else:
+            legal_moves = list(board.legal_moves)  # Convert the generator to a list
+            move_index = np.argmax(q_values.numpy()[0])
+            athena_move = legal_moves[move_index] if move_index < len(legal_moves) else random.choice(legal_moves)
 
-                    # ✅ **Evaluate Board Before & After Move**
-                    eval_before = evaluate_board(board, engine)
-                    eval_after = evaluate_board(board, engine)
-                    delta_score = eval_after - eval_before
+        update_move_vocab(athena_move.uci())
+        board.push(athena_move)
+        move_history.append(athena_move.uci())  # Store move history
 
-                    # ✅ **Compute Reward**
-                    white_to_move = board.turn == chess.WHITE
-                    reward = -delta_score if white_to_move else delta_score  # Reward = Positive for Good Move
+    engine.quit()
 
-                    # ✅ **Q-Network Loss Update**
-                    with tf.GradientTape() as tape:
-                        pred_q_value = q_network(fens[i:i+1])[0, best_move_index]
-                        loss_q = tf.keras.losses.MSE(reward, pred_q_value)
-                    gradients_q = tape.gradient(loss_q, q_network.trainable_variables)
-                    q_optimizer.apply_gradients(zip(gradients_q, q_network.trainable_variables))
 
-                    # ✅ **Actor-Critic Update**
-                    with tf.GradientTape() as tape:
-                        policy_probs, state_value = actor_critic(fens[i:i+1])
-                        advantage = reward - state_value  # Advantage function A(s, a) = Q(s,a) - V(s)
-                        log_policy = tf.math.log(policy_probs[0, best_move_index])
-                        loss_actor = -log_policy * advantage  # Policy Gradient Loss
-                        loss_critic = tf.keras.losses.MSE(reward, state_value)
-                        loss_ac = loss_actor + loss_critic
-                    gradients_ac = tape.gradient(loss_ac, actor_critic.trainable_variables)
-                    ac_optimizer.apply_gradients(zip(gradients_ac, actor_critic.trainable_variables))
 
-                    batch_loss += loss_ac.numpy()
-
-                total_loss += batch_loss
-                print(f"📉 Batch Loss: {batch_loss:.4f}")
-
-            print(f"📉 Epoch {epoch + 1} Loss: {total_loss:.4f}")
-
-            # ✅ Save Model
-            athena.save(MODEL_SAVE_PATH)
-            print(f"✅ Model saved at {MODEL_SAVE_PATH}")
+def train_athena():
+    """Trains Athena using collected self-play data with reinforcement learning."""
+    for epoch in range(EPOCHS):
+        print(f"Epoch {epoch + 1}/{EPOCHS}")
+        play_game()
+        
+        # Train DQN with experience replay
+        loss = train_dqn(dqn_model, replay_buffer, BATCH_SIZE, GAMMA)
+        if loss is not None:
+            print(f"Loss: {loss:.4f}")  # Only print if loss is valid
+        else:
+            print("Skipping training step - Not enough data in replay buffer.")  # Debug message
+    
+    replay_buffer.save()
+    dqn_model.save(MODEL_SAVE_PATH)
+    print(f"Model saved to {MODEL_SAVE_PATH}")
 
 if __name__ == "__main__":
-    train_rl()
+    train_athena()

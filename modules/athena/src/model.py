@@ -10,7 +10,7 @@ MAX_VOCAB_SIZE = 500000
 
 class TransformerBlock(layers.Layer):
     def __init__(self, embed_dim, num_heads, ff_dim, rate=0.1, **kwargs):
-        super(TransformerBlock, self).__init__(**kwargs)  # ✅ Allow extra arguments like 'trainable'
+        super(TransformerBlock, self).__init__(**kwargs)  # Allow extra arguments like 'trainable'
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.ff_dim = ff_dim
@@ -35,7 +35,7 @@ class TransformerBlock(layers.Layer):
         return self.layernorm2(out1 + ffn_output)
 
     def get_config(self):
-        """ ✅ Ensures the layer can be properly saved & loaded """
+        """ Ensures the layer can be properly saved & loaded """
         config = super().get_config()
         config.update({
             "embed_dim": self.embed_dim,
@@ -47,11 +47,11 @@ class TransformerBlock(layers.Layer):
 
     @classmethod
     def from_config(cls, config):
-        """ ✅ Ensures the layer is reconstructed correctly """
+        """ Ensures the layer is reconstructed correctly """
         return cls(**config)
 
 
-def get_model(num_transformers=4, embed_dim=128, dropout_rate=0.2, learning_rate=3e-4):
+def get_model(num_transformers=2, embed_dim=128, dropout_rate=0.3, learning_rate=0.0001):
     # Inputs
     fen_input = layers.Input(shape=(8, 8, 20), name="fen_input")  
     move_seq = layers.Input(shape=(50,), dtype=tf.int32, name="move_seq")  

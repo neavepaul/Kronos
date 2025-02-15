@@ -9,7 +9,7 @@ VOCAB_FILE = "move_vocab.json"
 MAX_MOVE_HISTORY = 50  # Fixed-length move history
 
 
-### ✅ 1️⃣ Convert FEN to Tensor Representation
+### 1️⃣ Convert FEN to Tensor Representation
 def fen_to_tensor(fen):
     """
     Converts a FEN string into a 8x8x20 tensor representation.
@@ -59,7 +59,7 @@ def fen_to_tensor(fen):
     return full_tensor
 
 
-### ✅ 2️⃣ Build Move Vocabulary from HDF5
+### 2️⃣ Build Move Vocabulary from HDF5
 def build_move_vocab(hdf5_file=HDF5_FILE):
     """
     Builds a move vocabulary from an HDF5 dataset instead of JSON.
@@ -84,7 +84,7 @@ def build_move_vocab(hdf5_file=HDF5_FILE):
     return move_vocab
 
 
-### ✅ 3️⃣ Convert Move Sequences to Indexed List
+### 3️⃣ Convert Move Sequences to Indexed List
 def move_to_index(move_history, move_vocab, max_sequence_length=50):
     """
     Converts a sequence of PFFTTU moves into indexed representation with padding.
@@ -92,7 +92,7 @@ def move_to_index(move_history, move_vocab, max_sequence_length=50):
     if isinstance(move_history, str):  
         move_history = [move_history]  # Convert single move to a list
     
-    # ✅ Ensure each move is a string (handles NumPy scalars)
+    # Ensure each move is a string (handles NumPy scalars)
     indexed_moves = [move_vocab.get(str(move), 0) for move in move_history]
 
     if len(indexed_moves) < max_sequence_length:
@@ -103,7 +103,7 @@ def move_to_index(move_history, move_vocab, max_sequence_length=50):
     return np.array(indexed_moves, dtype=np.int32)  
 
 
-### ✅ 4️⃣ Load Vocabulary from File
+### 4️⃣ Load Vocabulary from File
 def load_move_vocab():
     """
     Loads move vocabulary from JSON file.
@@ -116,14 +116,10 @@ def load_move_vocab():
         return json.load(f)
 
 
-### ✅ 5️⃣ Convert Indexed Moves Back to String
+### 5️⃣ Convert Indexed Moves Back to String
 def index_to_move(indexed_moves, move_vocab):
     """
     Converts indexed moves back to human-readable PFFTTU format.
     """
     reverse_vocab = {idx: move for move, idx in move_vocab.items()}
     return [reverse_vocab.get(idx, "[UNK]") for idx in indexed_moves]
-
-
-
-# build_move_vocab()

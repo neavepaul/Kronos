@@ -28,13 +28,13 @@ def uci_move_to_index(board, move):
     from_square = chess.parse_square(move[:2])
     to_square = chess.parse_square(move[2:4])
 
-    # ✅ Extract piece BEFORE making the move
+    # Extract piece BEFORE making the move
     piece = board.piece_at(from_square)
 
-    # ✅ Ensure we don't call .symbol() on NoneType
+    # Ensure we don't call .symbol() on NoneType
     piece_symbol = piece_mapping.get(piece.symbol(), "?") if piece else "?"
 
-    # ✅ Handle promotion (e.g., e7e8q)
+    # Handle promotion (e.g., e7e8q)
     promo_piece_map = {"q": "Q", "r": "R", "b": "B", "n": "N"}
     promo_piece = promo_piece_map.get(move[4], "-") if len(move) == 5 else "-"
 
@@ -71,10 +71,10 @@ def process_game(args):
             except Exception:
                 eval_score = 0  
 
-            # ✅ Extract the move encoding BEFORE pushing the move
+            # Extract the move encoding BEFORE pushing the move
             move_encoded = uci_move_to_index(board, move)
 
-            # ✅ Apply the move after extracting it
+            # Apply the move after extracting it
             board.push(chess.Move.from_uci(move))
             move_history.append(move_encoded)
 
@@ -113,13 +113,13 @@ def hdf5_writer(queue):
             if not game_data:
                 continue  # Skip empty data
 
-            # ✅ Extract arrays from the game data
+            # Extract arrays from the game data
             fens = np.array([data["fen_tensor"] for data in game_data], dtype=np.float32)
             turn_indicators = np.array([[data["turn_indicator"]] for data in game_data], dtype=np.float32)
             eval_scores = np.array([[data["eval_score"]] for data in game_data], dtype=np.float32)
             legal_moves = np.array([data["legal_moves_mask"] for data in game_data], dtype=np.int8)
 
-            # ✅ Handle move history encoding properly
+            # Handle move history encoding properly
             move_histories = [
                 [m.encode("ascii") for m in data["move_history"][-MAX_MOVE_HISTORY:]]
                 if len(data["move_history"]) >= MAX_MOVE_HISTORY
@@ -127,12 +127,12 @@ def hdf5_writer(queue):
                      [m.encode("ascii") for m in data["move_history"]]
                 for data in game_data
             ]
-            move_histories = np.array(move_histories, dtype="S6")  # ✅ Convert to NumPy array
+            move_histories = np.array(move_histories, dtype="S6")  # Convert to NumPy array
 
-            # ✅ Handle next moves properly
+            # Handle next moves properly
             next_moves = np.array([data["next_move"].encode("ascii") for data in game_data], dtype="S6")
 
-            # ✅ Resize and write to HDF5
+            # Resize and write to HDF5
             hf["fens"].resize(hf["fens"].shape[0] + fens.shape[0], axis=0)
             hf["fens"][-fens.shape[0]:] = fens
 
@@ -177,11 +177,11 @@ def process_pgn_in_parallel(pgn_file, engine_path, num_workers=cpu_count()):
     writer_process = Process(target=hdf5_writer, args=(queue,))
     writer_process.start()
 
-    jobs = [(moves, i, engine_path, queue) for i, moves in enumerate(games)]  # ✅ Pass all required arguments
+    jobs = [(moves, i, engine_path, queue) for i, moves in enumerate(games)]  # Pass all required arguments
 
     with tqdm(total=len(games), desc=f"Processing {pgn_file}") as pbar:
         with Pool(num_workers) as pool:
-            for _ in pool.imap_unordered(process_game, jobs):  # ✅ Now properly formatted!
+            for _ in pool.imap_unordered(process_game, jobs):  # Now properly formatted!
                 pbar.update(1)
 
     queue.put(None)
