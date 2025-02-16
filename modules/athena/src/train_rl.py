@@ -53,70 +53,67 @@ def update_move_vocab(move):
 
 
 def play_game():
-    """Plays a game between Athena and Stockfish while collecting training data."""
+    """Plays a self-play game between Athena and itself while collecting training data."""
     board = chess.Board()
-    engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
     move_history = []
-
-    move_history_encoded = np.zeros((50,), dtype=np.int32)  # Initialize empty move history
-    legal_moves_mask = np.zeros((64, 64), dtype=np.int8)  # Initialize legal moves mask
-
+    
     while not board.is_game_over():
-        fen = board.fen()
-        turn_indicator = np.array([1 if board.turn == chess.WHITE else 0], dtype=np.float32)
-
+        fen_before = board.fen()
+        legal_moves = list(board.legal_moves)
         # Update legal move mask for the current position
         legal_moves_mask = np.zeros((64, 64), dtype=np.int8)
         for legal_move in board.legal_moves:
             legal_moves_mask[legal_move.from_square, legal_move.to_square] = 1
 
-        # Ensure eval_before is always valid
-        try:
-            eval_before = engine.analyse(board, chess.engine.Limit(depth=10))["score"].relative.score(mate_score=10000) / 100.0
-        except Exception:
-            eval_before = 0.0
-
-        # Ensure move history is initialized correctly
-        fen_tensor = np.expand_dims(fen_to_tensor(fen), axis=0)
-        move_history_encoded = np.array(move_to_index(move_history, move_vocab), dtype=np.int32).reshape(1, 50)  # Correct Shape (1, 50)
+        # Get Athena's move from DQN
+        fen_tensor = np.expand_dims(fen_to_tensor(fen_before), axis=0)
+        move_history_encoded = np.array(move_to_index(move_history, move_vocab), dtype=np.int32).reshape(1, 50)
         legal_moves_mask = np.expand_dims(legal_moves_mask, axis=0)  # Expands to (1, 64, 64)
-        turn_indicator = np.expand_dims(np.array([turn_indicator], dtype=np.float32), axis=0)  # Expands to (1, 1)
-        eval_before = np.expand_dims(np.array([eval_before], dtype=np.float32), axis=0)  # Expands to (1, 1)
+        turn_indicator = np.array([[1.0 if board.turn == chess.WHITE else 0.0]], dtype=np.float32)
 
-        # Athena Move Selection
-        q_values = dqn_model([fen_tensor, move_history_encoded, legal_moves_mask, eval_before, turn_indicator])
-
+        q_values = dqn_model([fen_tensor, move_history_encoded, legal_moves_mask, turn_indicator])
+        
         if random.random() < EPSILON:
-            athena_move = random.choice(list(board.legal_moves))  # Explore
+            athena_move = random.choice(legal_moves)  # Exploration
         else:
-            legal_moves = list(board.legal_moves)  # Convert the generator to a list
             move_index = np.argmax(q_values.numpy()[0])
             athena_move = legal_moves[move_index] if move_index < len(legal_moves) else random.choice(legal_moves)
 
-        update_move_vocab(athena_move.uci())
+        board_before = board.copy()
         board.push(athena_move)
-        move_history.append(athena_move.uci())  # Store move history
+        move_history.append(athena_move.uci())
 
-    engine.quit()
+        # Compute reward based on piece-based shaping
+        reward = compute_reward(board_before, board, athena_move, None)
+
+
+        # Store in replay buffer
+        replay_buffer.add((fen_tensor, move_history_encoded, legal_moves_mask, turn_indicator), 
+                          athena_move.uci(), reward, None, board.is_game_over())
 
 
 
 def train_athena():
     """Trains Athena using collected self-play data with reinforcement learning."""
     for epoch in range(EPOCHS):
-        print(f"Epoch {epoch + 1}/{EPOCHS}")
-        play_game()
+        print(f"\n🌟 Epoch {epoch + 1}/{EPOCHS}")
+
+        # Play a game and collect data
+        play_game(epoch + 1)
         
         # Train DQN with experience replay
         loss = train_dqn(dqn_model, replay_buffer, BATCH_SIZE, GAMMA)
+        
+        # Training Info 📊
         if loss is not None:
-            print(f"Loss: {loss:.4f}")  # Only print if loss is valid
+            print(f"🎯 Training Step | Epoch {epoch + 1} | Loss: {loss:.4f}")
         else:
-            print("Skipping training step - Not enough data in replay buffer.")  # Debug message
-    
+            print("⚠️ Skipping training step - Not enough data in replay buffer.")
+
     replay_buffer.save()
     dqn_model.save(MODEL_SAVE_PATH)
-    print(f"Model saved to {MODEL_SAVE_PATH}")
+    print(f"💾 Model saved to {MODEL_SAVE_PATH}")
+
 
 if __name__ == "__main__":
     train_athena()

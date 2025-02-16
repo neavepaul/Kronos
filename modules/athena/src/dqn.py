@@ -13,42 +13,38 @@ class DQN(tf.keras.Model):
         super(DQN, self).__init__()
 
         # Inputs
-        fen_input = layers.Input(shape=(8, 8, 20), name="fen_input")  
-        move_seq = layers.Input(shape=(50,), dtype=tf.int32, name="move_seq")  
-        legal_mask = layers.Input(shape=(64, 64), dtype=tf.float32, name="legal_mask")  
-        turn_indicator = layers.Input(shape=(1,), dtype=tf.float32, name="turn_indicator")  
-        eval_score = layers.Input(shape=(1,), dtype=tf.float32, name="eval_score")  
+        board_input = tf.keras.layers.Input(shape=(8, 8, 20))  # FEN tensor
+        move_history_input = tf.keras.layers.Input(shape=(50,), dtype=tf.int32)  # Move history
+        legal_moves_input = tf.keras.layers.Input(shape=(64, 64), dtype=tf.float32)  # Legal move mask
+        turn_input = tf.keras.layers.Input(shape=(1,), dtype=tf.float32)  # Turn indicator
 
-        # 1️⃣ CNN for FEN Board Representation
-        x = layers.Conv2D(128, 3, activation='gelu', padding='same')(fen_input)
-        x = layers.BatchNormalization()(x)
-        x = layers.Conv2D(256, 3, activation='gelu', padding='same')(x)
-        x = layers.BatchNormalization()(x)
-        x = layers.Reshape((64, 256))(x)  
-        x_pooled = layers.GlobalAvgPool1D()(x)  
+        # Board Processing (CNN)
+        x = tf.keras.layers.Conv2D(128, 3, activation='gelu', padding='same')(board_input)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.Conv2D(256, 3, activation='gelu', padding='same')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.Reshape((64, 256))(x)  
+        x = tf.keras.layers.GlobalAvgPool1D()(x)  
 
-        # 2️⃣ Transformer for Move History Encoding
-        emb = layers.Embedding(input_dim=MAX_VOCAB_SIZE, output_dim=128)(move_seq)  
-        y = emb
-        for _ in range(2):  # Use 2 Transformer blocks
-            y = TransformerBlock(embed_dim=128, num_heads=4, ff_dim=512, rate=0.3)(y, training=True)
-        y = layers.GlobalAvgPool1D()(y)  
+        # Move History Encoding (Transformer)
+        emb = tf.keras.layers.Embedding(input_dim=MAX_VOCAB_SIZE, output_dim=128)(move_history_input)
+        y = TransformerBlock(embed_dim=128, num_heads=4, ff_dim=512, rate=0.3)(emb)
+        y = tf.keras.layers.GlobalAvgPool1D()(y)
 
-        # 3️⃣ Processing Additional Inputs
-        eval_scaled = layers.Dense(128, activation="gelu")(eval_score)  
-        turn_scaled = layers.Dense(32, activation="gelu")(turn_indicator)
+        # Fusion
+        turn_scaled = tf.keras.layers.Dense(32, activation="gelu")(turn_input)
+        fused = tf.keras.layers.Concatenate()([x, y, turn_scaled])
 
-        # 4️⃣ Fusion of Features
-        fused = layers.Concatenate()([x_pooled, y, eval_scaled, turn_scaled])  
+        z = tf.keras.layers.Dense(512, activation='gelu')(fused)
+        z = tf.keras.layers.Dropout(0.3)(z)
 
-        z = layers.Dense(512, activation='gelu')(fused)
-        z = layers.Dropout(0.3)(z)
-
-        # 5️⃣ Output Q-Values
-        q_values = layers.Dense(action_size, activation='linear')(z)  
+        # Move Selection Output
+        move_output = tf.keras.layers.Dense(6, activation='linear', name="move_output")(z)
 
         # Define Model
-        self.model = Model(inputs=[fen_input, move_seq, legal_mask, eval_score, turn_indicator], outputs=q_values)
+        self.model = tf.keras.Model(inputs=[board_input, move_history_input, legal_moves_input, turn_input], 
+                                    outputs=move_output)
+
 
         # Compile with AdamW Optimizer
         self.model.compile(
@@ -58,6 +54,11 @@ class DQN(tf.keras.Model):
 
     def call(self, inputs):
         return self.model(inputs)
+    
+    def predict_value(self, fen_tensor):
+        """Predicts board evaluation (replaces Stockfish eval)."""
+        _, board_eval = self.model([fen_tensor, np.zeros((1, 50)), np.zeros((1, 64, 64)), np.zeros((1, 1)), np.zeros((1, 1))])
+        return board_eval.numpy()[0, 0]
 
 
 # Load move vocabulary
