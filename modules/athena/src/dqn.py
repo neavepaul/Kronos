@@ -7,44 +7,49 @@ from tensorflow.keras import layers, Model
 from model import TransformerBlock  # Use the Transformer block from original model
 
 MAX_VOCAB_SIZE = 500000
+TARGET_UPDATE_FREQUENCY = 500  # Update target network every N steps
+TAU = 0.05  # Soft update factor for target network
 
 class DQN(tf.keras.Model):
     def __init__(self, input_shape, action_size, learning_rate=1e-4):
         super(DQN, self).__init__()
 
         # Inputs
-        board_input = tf.keras.layers.Input(shape=(8, 8, 20))  # FEN tensor
-        move_history_input = tf.keras.layers.Input(shape=(50,), dtype=tf.int32)  # Move history
-        legal_moves_input = tf.keras.layers.Input(shape=(64, 64), dtype=tf.float32)  # Legal move mask
-        turn_input = tf.keras.layers.Input(shape=(1,), dtype=tf.float32)  # Turn indicator
+        board_input = layers.Input(shape=(8, 8, 20))  # FEN tensor
+        move_history_input = layers.Input(shape=(50,), dtype=tf.int32)  # Move history
+        legal_moves_input = layers.Input(shape=(64, 64), dtype=tf.float32)  # Legal move mask
+        turn_input = layers.Input(shape=(1,), dtype=tf.float32)  # Turn indicator
 
         # Board Processing (CNN)
-        x = tf.keras.layers.Conv2D(128, 3, activation='gelu', padding='same')(board_input)
-        x = tf.keras.layers.BatchNormalization()(x)
-        x = tf.keras.layers.Conv2D(256, 3, activation='gelu', padding='same')(x)
-        x = tf.keras.layers.BatchNormalization()(x)
-        x = tf.keras.layers.Reshape((64, 256))(x)  
-        x = tf.keras.layers.GlobalAvgPool1D()(x)  
+        x = layers.Conv2D(128, 3, activation='gelu', padding='same')(board_input)
+        x = layers.BatchNormalization()(x)
+        x = layers.Conv2D(256, 3, activation='gelu', padding='same')(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.Reshape((64, 256))(x)  
+        x = layers.GlobalAvgPool1D()(x)  
 
         # Move History Encoding (Transformer)
-        emb = tf.keras.layers.Embedding(input_dim=MAX_VOCAB_SIZE, output_dim=128)(move_history_input)
+        emb = layers.Embedding(input_dim=MAX_VOCAB_SIZE, output_dim=128)(move_history_input)
         y = TransformerBlock(embed_dim=128, num_heads=4, ff_dim=512, rate=0.3)(emb)
-        y = tf.keras.layers.GlobalAvgPool1D()(y)
+        y = layers.GlobalAvgPool1D()(y)
 
         # Fusion
-        turn_scaled = tf.keras.layers.Dense(32, activation="gelu")(turn_input)
-        fused = tf.keras.layers.Concatenate()([x, y, turn_scaled])
+        turn_scaled = layers.Dense(32, activation="gelu")(turn_input)
+        fused = layers.Concatenate()([x, y, turn_scaled])
 
-        z = tf.keras.layers.Dense(512, activation='gelu')(fused)
-        z = tf.keras.layers.Dropout(0.3)(z)
+        z = layers.Dense(512, activation='gelu')(fused)
+        z = layers.Dropout(0.3)(z)
 
         # Move Selection Output
-        move_output = tf.keras.layers.Dense(6, activation='linear', name="move_output")(z)
+        move_output = layers.Dense(6, activation='linear', name="move_output")(z)
 
         # Define Model
-        self.model = tf.keras.Model(inputs=[board_input, move_history_input, legal_moves_input, turn_input], 
+        self.model = Model(inputs=[board_input, move_history_input, legal_moves_input, turn_input], 
                                     outputs=move_output)
 
+        # Target Network (Copy of Main Network)
+        self.target_model = tf.keras.models.clone_model(self.model)
+        self.target_model.set_weights(self.model.get_weights())
 
         # Compile with AdamW Optimizer
         self.model.compile(
@@ -54,7 +59,14 @@ class DQN(tf.keras.Model):
 
     def call(self, inputs):
         return self.model(inputs)
-    
+
+    def update_target_network(self):
+        """Soft update target network weights using TAU (Polyak averaging)."""
+        model_weights = np.array(self.model.get_weights(), dtype=object)
+        target_weights = np.array(self.target_model.get_weights(), dtype=object)
+        new_weights = TAU * model_weights + (1 - TAU) * target_weights
+        self.target_model.set_weights(new_weights)
+
     def predict_value(self, fen_tensor):
         """Predicts board evaluation (replaces Stockfish eval)."""
         _, board_eval = self.model([fen_tensor, np.zeros((1, 50)), np.zeros((1, 64, 64)), np.zeros((1, 1)), np.zeros((1, 1))])
@@ -72,7 +84,7 @@ else:
     move_vocab = {}  # Start empty
 
 
-def train_dqn(dqn_model, replay_buffer, batch_size=32, gamma=0.99):
+def train_dqn(dqn_model, replay_buffer, batch_size=32, gamma=0.99, training_step=0):
     """Trains the DQN model using experience replay."""
     if replay_buffer.size() < batch_size:
         return None  # Return None if not enough samples
@@ -83,16 +95,15 @@ def train_dqn(dqn_model, replay_buffer, batch_size=32, gamma=0.99):
     actions, rewards, next_state_data, dones = minibatch[1], minibatch[2], minibatch[3], minibatch[4]
     next_fens, next_histories, next_legal_moves, next_eval, next_turn = zip(*next_state_data)
 
-
-
     # Convert FEN strings to tensors
-    states = np.array([fen_to_tensor(fen) for fen in states], dtype=np.float32)
-    next_states = np.array([fen_to_tensor(fen) for fen in next_states], dtype=np.float32)
+    states = np.array([fen_to_tensor(fen) for fen in state_fens], dtype=np.float32)
+    next_states = np.array([fen_to_tensor(fen) for fen in next_fens], dtype=np.float32)
 
-    # Convert UCI moves into integer indices using `move_vocab`
+    # Convert PFFTTU moves into integer indices using `move_vocab`
     action_indices = np.array([[i, move_to_index([move], move_vocab, max_sequence_length=1)[0]] for i, move in enumerate(actions)], dtype=np.int32)
 
-    target_q_values = dqn_model([
+    # Use Target Network for Q-value estimation
+    target_q_values = dqn_model.target_model([
                                     np.array(next_fens, dtype=np.float32),
                                     np.array(next_histories, dtype=np.int32),
                                     np.array(next_legal_moves, dtype=np.float32),
@@ -115,11 +126,14 @@ def train_dqn(dqn_model, replay_buffer, batch_size=32, gamma=0.99):
         q_values_selected = tf.gather_nd(q_values, action_indices)
         loss = tf.keras.losses.MSE(target_values, q_values_selected)
     
-    grads = tape.gradient(loss, dqn_model.trainable_variables)
-    dqn_model.optimizer.apply_gradients(zip(grads, dqn_model.trainable_variables))
+    grads = tape.gradient(loss, dqn_model.model.trainable_variables)
+    dqn_model.model.optimizer.apply_gradients(zip(grads, dqn_model.model.trainable_variables))
+
+    # Update target network periodically
+    if training_step % TARGET_UPDATE_FREQUENCY == 0:
+        dqn_model.update_target_network()
 
     return loss.numpy()
-
 
 
 if __name__ == "__main__":
