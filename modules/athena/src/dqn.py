@@ -89,43 +89,62 @@ def train_dqn(dqn_model, replay_buffer, batch_size=32, gamma=0.99, training_step
     if replay_buffer.size() < batch_size:
         return None  # Return None if not enough samples
 
-    minibatch = list(zip(*replay_buffer.sample(batch_size)))  # Unzip correctly
+    states, actions, rewards, next_states, dones = replay_buffer.sample(batch_size)
 
-    state_fens, state_histories, state_legal_moves, state_eval, state_turn = zip(*minibatch[0])
-    actions, rewards, next_state_data, dones = minibatch[1], minibatch[2], minibatch[3], minibatch[4]
-    next_fens, next_histories, next_legal_moves, next_eval, next_turn = zip(*next_state_data)
+    # Ensure next_states are not None before unpacking
+    valid_indices = [i for i, ns in enumerate(next_states) if ns is not None]
 
-    # Convert FEN strings to tensors
-    states = np.array([fen_to_tensor(fen) for fen in state_fens], dtype=np.float32)
-    next_states = np.array([fen_to_tensor(fen) for fen in next_fens], dtype=np.float32)
+    if not valid_indices:
+        print("⚠️ No valid next states in replay buffer. Skipping training step.")
+        return None
 
-    # Convert PFFTTU moves into integer indices using `move_vocab`
-    action_indices = np.array([[i, move_to_index([move], move_vocab, max_sequence_length=1)[0]] for i, move in enumerate(actions)], dtype=np.int32)
+    states = [states[i] for i in valid_indices]
+    actions = [actions[i] for i in valid_indices]
+    rewards = [rewards[i] for i in valid_indices]
+    next_states = [next_states[i] for i in valid_indices]
+    dones = np.array([dones[i] for i in valid_indices], dtype=np.float32)  # Convert to NumPy array
+
+    # Unpack values after filtering
+    state_fens, state_histories, state_legal_moves, state_turn = zip(*states)
+    next_fens, next_histories, next_legal_moves, next_turn = zip(*next_states)
+
+    # Convert FEN strings to tensors only if they are strings
+    states = [fen_to_tensor(fen) if isinstance(fen, str) else fen for fen in state_fens]
+    next_states = [fen_to_tensor(fen) if isinstance(fen, str) else fen for fen in next_fens]
+
+    # Fix Move History Shape Issue
+    state_histories = np.array(state_histories, dtype=np.int32).squeeze(axis=1)  
+    next_histories = np.array(next_histories, dtype=np.int32).squeeze(axis=1)  
+
+    # Fix Legal Moves Shape Issue
+    state_legal_moves = np.array(state_legal_moves, dtype=np.float32).squeeze(axis=1)  
+    next_legal_moves = np.array(next_legal_moves, dtype=np.float32).squeeze(axis=1)  
+
+    # Convert moves into integer indices
+    action_indices = np.array([[i, move_to_index(move, move_vocab)[0]] for i, move in enumerate(actions)], dtype=np.int32)
 
     # Use Target Network for Q-value estimation
     target_q_values = dqn_model.target_model([
-                                    np.array(next_fens, dtype=np.float32),
-                                    np.array(next_histories, dtype=np.int32),
-                                    np.array(next_legal_moves, dtype=np.float32),
-                                    np.array(next_eval, dtype=np.float32),
-                                    np.array(next_turn, dtype=np.float32)
-                                ])
+        np.array(next_states, dtype=np.float32),
+        next_histories,
+        next_legal_moves,
+        np.array(next_turn, dtype=np.float32)
+    ])
 
     max_q_values = np.max(target_q_values.numpy(), axis=1)
-    target_values = np.reshape(rewards + gamma * max_q_values * (1 - dones), (-1, 1))
+    target_values = np.reshape(rewards + gamma * max_q_values * (1 - dones), (-1, 1))  # Fixed issue
 
     with tf.GradientTape() as tape:
         q_values = dqn_model([
-            np.array(state_fens, dtype=np.float32),
-            np.array(state_histories, dtype=np.int32),
-            np.array(state_legal_moves, dtype=np.float32),
-            np.array(state_eval, dtype=np.float32),
+            np.array(states, dtype=np.float32),
+            state_histories,
+            state_legal_moves,
             np.array(state_turn, dtype=np.float32)
         ])
 
         q_values_selected = tf.gather_nd(q_values, action_indices)
         loss = tf.keras.losses.MSE(target_values, q_values_selected)
-    
+
     grads = tape.gradient(loss, dqn_model.model.trainable_variables)
     dqn_model.model.optimizer.apply_gradients(zip(grads, dqn_model.model.trainable_variables))
 

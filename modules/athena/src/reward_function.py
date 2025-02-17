@@ -58,17 +58,17 @@ def compute_reward(board_before, board_after, athena_move, game_result):
     # Reward for **Correct** Castling (Only if performed)
     castling_reward = 0
     if board_before.has_castling_rights(board_before.turn) and not board_after.has_castling_rights(board_before.turn):
-        if athena_move in ["e1g1", "e1c1", "e8g8", "e8c8"]:  # Kingside or Queenside castling
+        if str(athena_move) in ["e1g1", "e1c1", "e8g8", "e8c8"]:  # Kingside or Queenside castling
             castling_reward = CASTLING_REWARD * color_factor
 
     # Reward Pawn Promotion
     promotion_reward = 0
-    if len(athena_move) == 5:  # e.g., "e7e8q" (promotion move has 5 chars)
+    if len(str(athena_move)) == 5:  # e.g., "e7e8q" (promotion move has 5 chars)
         promotion_reward = PROMOTION_REWARD * color_factor
 
     # Reward En Passant
     en_passant_reward = 0
-    if board_before.is_en_passant(chess.Move.from_uci(athena_move)):
+    if board_before.is_en_passant(chess.Move.from_uci(str(athena_move))):
         en_passant_reward = EN_PASSANT_REWARD * color_factor
 
     # Reward for Giving Check
@@ -86,17 +86,20 @@ def compute_reward(board_before, board_after, athena_move, game_result):
 
     # Reward Passed Pawn Advancement
     passed_pawn_reward = 0
-    if board_after.piece_at(chess.parse_square(athena_move[2:4])):
-        moved_piece = board_after.piece_at(chess.parse_square(athena_move[2:4]))
-        if moved_piece and moved_piece.piece_type == chess.PAWN:
-            # Check if it’s a passed pawn (no opposing pawns blocking it)
-            if not any(
-                board_after.piece_at(chess.square(file, rank))
-                for rank in range(8)
-                for file in [moved_piece.square % 8 - 1, moved_piece.square % 8 + 1]
-                if 0 <= file <= 7
-            ):
-                passed_pawn_reward = PASSED_PAWN_ADVANCE_REWARD * color_factor
+    moved_square = athena_move.to_square  # The square where the piece moved
+    moved_piece = board_after.piece_at(moved_square)
+
+    if moved_piece and moved_piece.piece_type == chess.PAWN:
+        file, rank = chess.square_file(moved_square), chess.square_rank(moved_square)  
+
+        # Check if it’s a passed pawn (no opposing pawns blocking it)
+        if not any(
+            board_after.piece_at(chess.square(adj_file, r))
+            for r in range(8)
+            for adj_file in [file - 1, file + 1]  # Check adjacent files
+            if 0 <= adj_file <= 7
+        ):
+            passed_pawn_reward = PASSED_PAWN_ADVANCE_REWARD * color_factor
 
     # Avoid Threefold Repetition (Discourage repeating moves when winning)
     repetition_penalty = 0

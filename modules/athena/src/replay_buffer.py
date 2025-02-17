@@ -19,7 +19,7 @@ class ReplayBuffer:
         indices = np.random.choice(len(self.buffer), batch_size, replace=False)
         batch = [self.buffer[i] for i in indices]
         states, actions, rewards, next_states, dones = zip(*batch)
-        return np.array(states), np.array(actions), np.array(rewards), np.array(next_states), np.array(dones, dtype=np.float32)
+        return list(states), list(actions), list(rewards), list(next_states), list(dones)
     
     def size(self):
         """Returns the current size of the buffer."""
@@ -28,12 +28,33 @@ class ReplayBuffer:
     def save(self):
         """Saves the replay buffer to an HDF5 file."""
         with h5py.File(REPLAY_BUFFER_PATH, "w") as f:
-            f.create_dataset("states", data=np.array([s for s, _, _, _, _ in self.buffer], dtype='S80'))
-            f.create_dataset("actions", data=np.array([a for _, a, _, _, _ in self.buffer], dtype='S6'))
-            f.create_dataset("rewards", data=np.array([r for _, _, r, _, _ in self.buffer], dtype=np.float32))
-            f.create_dataset("next_states", data=np.array([ns for _, _, _, ns, _ in self.buffer], dtype='S80'))
-            f.create_dataset("dones", data=np.array([d for _, _, _, _, d in self.buffer], dtype=np.bool_))
-    
+            # Ensure FEN states are stored as strings (not tensors)
+            f.create_dataset("states", data=np.array([str(s[0]) for s, _, _, _, _ in self.buffer], dtype="S80"))
+            
+            # Store move history as int arrays
+            move_histories = np.stack([s[1] for s, _, _, _, _ in self.buffer])
+            f.create_dataset("move_histories", data=move_histories)
+            
+            # Store legal move masks
+            legal_moves_masks = np.stack([s[2] for s, _, _, _, _ in self.buffer])
+            f.create_dataset("legal_moves_masks", data=legal_moves_masks)
+
+            # Store turn indicators
+            turn_indicators = np.stack([s[3] for s, _, _, _, _ in self.buffer])
+            f.create_dataset("turn_indicators", data=turn_indicators)
+
+            # Actions (stored as strings)
+            f.create_dataset("actions", data=np.array([a for _, a, _, _, _ in self.buffer], dtype="S6"))
+
+            # Rewards (ensure float format)
+            f.create_dataset("rewards", data=np.array([float(r) for _, _, r, _, _ in self.buffer], dtype=np.float32))
+
+            # Next states (ensure FEN strings)
+            f.create_dataset("next_states", data=np.array([str(ns[0]) for _, _, _, ns, _ in self.buffer], dtype="S80"))
+
+            # Done flags (convert to boolean)
+            f.create_dataset("dones", data=np.array([bool(d) for _, _, _, _, d in self.buffer], dtype=np.bool_))
+
     def load(self):
         """Loads the replay buffer from an HDF5 file."""
         try:
