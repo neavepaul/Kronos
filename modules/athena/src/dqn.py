@@ -44,8 +44,7 @@ class DQN(tf.keras.Model):
         move_output = layers.Dense(6, activation='linear', name="move_output")(z)
 
         # Define Model
-        self.model = Model(inputs=[board_input, move_history_input, legal_moves_input, turn_input], 
-                                    outputs=move_output)
+        self.model = Model(inputs=[board_input, move_history_input, legal_moves_input, turn_input], outputs=move_output)
 
         # Target Network (Copy of Main Network)
         self.target_model = tf.keras.models.clone_model(self.model)
@@ -67,10 +66,24 @@ class DQN(tf.keras.Model):
         new_weights = TAU * model_weights + (1 - TAU) * target_weights
         self.target_model.set_weights(new_weights)
 
-    def predict_value(self, fen_tensor):
-        """Predicts board evaluation (replaces Stockfish eval)."""
-        _, board_eval = self.model([fen_tensor, np.zeros((1, 50)), np.zeros((1, 64, 64)), np.zeros((1, 1)), np.zeros((1, 1))])
-        return board_eval.numpy()[0, 0]
+    def get_config(self):
+        """Returns the configuration of the model for serialization."""
+        config = super(DQN, self).get_config()
+        config.update({
+            "input_shape": self.model.input_shape,
+            "action_size": self.model.output_shape[1],
+            "learning_rate": self.model.optimizer.learning_rate.numpy(),
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        """Creates a new instance from the given config."""
+        return cls(
+            input_shape=config["input_shape"][1:],  # Remove batch dimension
+            action_size=config["action_size"],
+            learning_rate=config["learning_rate"],
+        )
 
 
 # Load move vocabulary
@@ -84,12 +97,10 @@ else:
     move_vocab = {}  # Start empty
 
 
-def train_dqn(dqn_model, replay_buffer, batch_size=32, gamma=0.99, training_step=0):
+def train_dqn(dqn_model, replay_buffer, gamma=0.99, training_step=0):
     """Trains the DQN model using experience replay."""
-    if replay_buffer.size() < batch_size:
-        return None  # Return None if not enough samples
 
-    states, actions, rewards, next_states, dones = replay_buffer.sample(batch_size)
+    states, actions, rewards, next_states, dones = replay_buffer.sample(replay_buffer.size())
 
     # Ensure next_states are not None before unpacking
     valid_indices = [i for i, ns in enumerate(next_states) if ns is not None]

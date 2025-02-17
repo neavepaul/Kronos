@@ -29,7 +29,7 @@ LEARNING_RATE = 1e-4
 GAMMA = 0.99  # Discount factor for rewards
 EPSILON = 0.1  # Exploration rate for epsilon-greedy policy
 BATCH_SIZE = 32
-EPOCHS = 5
+EPOCHS = 200
 
 # Paths
 STOCKFISH_PATH = "stockfish/stockfish-windows-x86-64-avx2.exe"
@@ -59,8 +59,8 @@ def update_move_vocab(move):
     with open("move_vocab.json", "w") as f:
         json.dump(move_vocab, f, indent=4)
 
-def play_vs_stockfish(skill_level):
-    """Athena plays 50 games against Stockfish with increasing difficulty."""
+def play_vs_stockfish(skill_level, athena_is_white):
+    """Athena plays against Stockfish with increasing difficulty."""
     board = chess.Board()
     move_history = []
 
@@ -80,13 +80,13 @@ def play_vs_stockfish(skill_level):
             legal_moves_mask = np.expand_dims(legal_moves_mask, axis=0)
             turn_indicator = np.array([[1.0 if board.turn == chess.WHITE else 0.0]], dtype=np.float32)
 
-            if board.turn == chess.WHITE:
-                # Athena plays as White
+            if (board.turn == chess.WHITE and athena_is_white) or (board.turn == chess.BLACK and not athena_is_white):
+                # Athena plays
                 q_values = dqn_model([fen_tensor, move_history_encoded, legal_moves_mask, turn_indicator])
                 move_index = np.argmax(q_values.numpy()[0])
                 athena_move = legal_moves[move_index] if move_index < len(legal_moves) else random.choice(legal_moves)
             else:
-                # Stockfish plays as Black
+                # Stockfish plays
                 stockfish_move = stockfish.play(board, chess.engine.Limit(time=0.1))
                 athena_move = stockfish_move.move
 
@@ -118,15 +118,31 @@ def play_vs_stockfish(skill_level):
 
 def train_athena():
     """Train Athena by playing against Stockfish."""
-    for epoch in range(50):  # 50 epochs with increasing Stockfish skill
-        skill_level = min(20, epoch // 3)  # Increase skill every 3 epochs
-        print(f"\n🌟 Epoch {epoch + 1}/50 | Stockfish Skill Level: {skill_level}")
+    for epoch in range(EPOCHS):
+        # Adaptive difficulty range per epoch block
+        if epoch < 50:
+            skill_level = random.randint(0, 3)
+        elif epoch < 100:
+            skill_level = random.randint(4, 7)
+        elif epoch < 150:
+            skill_level = random.randint(8, 11)
+        elif epoch < 175:
+            skill_level = random.randint(12, 15)
+        else:
+            skill_level = random.randint(16, 20)
 
-        # Play a game vs Stockfish
-        play_vs_stockfish(skill_level)
+        # Assign random color to Athena
+        athena_is_white = bool(random.getrandbits(1))  
+        white_player = "Athena" if athena_is_white else "Stockfish"
+
+        print(f"\n🌟 Epoch {epoch + 1}/{EPOCHS} | Stockfish Skill Level: {skill_level} | White: {white_player}")
+
+        # Play a game against Stockfish
+        play_vs_stockfish(skill_level, athena_is_white)
         
         # Train DQN
-        loss = train_dqn(dqn_model, replay_buffer, BATCH_SIZE, GAMMA)
+        all_transitions = replay_buffer.sample(len(replay_buffer))  # Fetch all moves
+        loss = train_dqn(dqn_model, all_transitions, GAMMA)  # Train on the full game
         
         if loss is not None:
             print(f"🎯 Training Step | Epoch {epoch + 1} | Loss: {np.mean(loss):.4f}")
@@ -137,10 +153,6 @@ def train_athena():
     dqn_model.save(MODEL_SAVE_PATH)
     print(f"💾 Model saved to {MODEL_SAVE_PATH}")
 
-
-    replay_buffer.save()
-    dqn_model.save(MODEL_SAVE_PATH)
-    print(f"💾 Model saved to {MODEL_SAVE_PATH}")
 
 
 if __name__ == "__main__":

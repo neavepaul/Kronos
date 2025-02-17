@@ -6,7 +6,7 @@ PIECE_VALUES = {"p": 1, "n": 3, "b": 3, "r": 5, "q": 9, "k": 0}  # King has no m
 
 # Reward Scaling Factors with Justifications so I don't doubt them later LOL :)
 MATERIAL_WEIGHT = 0.1  # Material shaping should not overpower the final win/loss reward
-OUTCOME_REWARD = 1.0    # Winning should be the highest priority
+OUTCOME_REWARD = 10.0    # Winning should be the highest priority
 DRAW_PENALTY = -0.5     # Penalize stalemates to avoid Athena trading everything into draws
 CASTLING_REWARD = 0.3   # Encourage castling only if performed
 PROMOTION_REWARD = 5.0  # High reward for pawn promotion
@@ -18,7 +18,10 @@ TRAPPED_PIECE_REWARD = 0.5  # Reward for limiting opponent piece movement
 PASSED_PAWN_ADVANCE_REWARD = 0.5  # Encourages pawn promotion strategy
 CHECK_REWARD = 0.2      # Encourages offensive play
 KING_ACTIVITY_REWARD = 0.3  # Encourages king activation in endgame
-AVOID_REPETITION_PENALTY = -0.3  # Penalize unnecessary repetition
+AVOID_REPETITION_PENALTY = -6.0  # Penalize unnecessary repetition
+# Encourage pawn moves in the opening (first 10 moves)
+OPENING_PAWN_MOVES = {"e2e4", "d2d4", "c2c4", "f2f4", "g2g3", "b2b3"}
+OPENING_PAWN_REWARD = 0.6  # Higher than other positional rewards
 
 def compute_reward(board_before, board_after, athena_move, game_result):
     """
@@ -144,11 +147,15 @@ def compute_reward(board_before, board_after, athena_move, game_result):
         else:
             final_reward = game_result * OUTCOME_REWARD * color_factor
 
+    # Reward for early pawn moves
+    move_count = len(board_after.move_stack)
+    opening_pawn_reward = OPENING_PAWN_REWARD if move_count < 10 and str(athena_move) in OPENING_PAWN_MOVES else 0
+
     # Total Reward
     total_reward = (
         material_reward + castling_reward + promotion_reward + en_passant_reward + check_reward +
         fork_reward + pin_reward + skewer_reward + trapped_piece_reward + 
-        passed_pawn_reward + king_activity_reward + repetition_penalty + final_reward
+        passed_pawn_reward + king_activity_reward + repetition_penalty + opening_pawn_reward + final_reward
     )
 
     return total_reward
