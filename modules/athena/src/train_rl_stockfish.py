@@ -141,7 +141,8 @@ def train_athena():
         play_vs_stockfish(skill_level, athena_is_white)
         
         # Train DQN
-        all_transitions = replay_buffer.sample(len(replay_buffer))  # Fetch all moves
+        print(len(replay_buffer.buffer))
+        all_transitions = replay_buffer  # Fetch all moves
         loss = train_dqn(dqn_model, all_transitions, GAMMA)  # Train on the full game
         
         if loss is not None:

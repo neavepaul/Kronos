@@ -10,6 +10,10 @@ class ReplayBuffer:
     def __init__(self, buffer_size=REPLAY_BUFFER_SIZE):
         self.buffer = deque(maxlen=buffer_size)
     
+    def __len__(self):
+        """Allows `len(replay_buffer)` to return the current buffer size."""
+        return len(self.buffer)
+    
     def add(self, state, action, reward, next_state, done):
         """Adds an experience tuple to the buffer."""
         self.buffer.append((state, action, reward, next_state, done))

@@ -99,8 +99,11 @@ else:
 
 def train_dqn(dqn_model, replay_buffer, gamma=0.99, training_step=0):
     """Trains the DQN model using experience replay."""
-
-    states, actions, rewards, next_states, dones = replay_buffer.sample(replay_buffer.size())
+    if len(replay_buffer.buffer) == 0:
+        print("⚠️ Replay buffer empty. Skipping training step.")
+        return None  
+    
+    states, actions, rewards, next_states, dones = replay_buffer.sample(len(replay_buffer.buffer))
 
     # Ensure next_states are not None before unpacking
     valid_indices = [i for i, ns in enumerate(next_states) if ns is not None]
