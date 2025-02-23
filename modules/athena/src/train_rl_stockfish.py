@@ -27,7 +27,6 @@ with open("move_vocab.json", "r") as f:
 # RL Hyperparameters
 LEARNING_RATE = 1e-4
 GAMMA = 0.99  # Discount factor for rewards
-EPSILON = 0.1  # Exploration rate for epsilon-greedy policy
 BATCH_SIZE = 32
 EPOCHS = 200
 
@@ -35,6 +34,19 @@ EPOCHS = 200
 STOCKFISH_PATH = "stockfish/stockfish-windows-x86-64-avx2.exe"
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 MODEL_SAVE_PATH = f"models/athena_DQN_{timestamp}_{EPOCHS}epochs.keras"
+
+EPSILON_START = 1.0  # Start fully random
+EPSILON_END = 0.01  # Final value
+EPSILON_DECAY = 0.995  # Slowly decay over time
+
+EPSILON = EPSILON_START  # Initialize
+
+def get_epsilon(epoch):
+    """Decay exploration rate each epoch."""
+    global EPSILON
+    EPSILON = max(EPSILON_END, EPSILON * EPSILON_DECAY)
+    return EPSILON
+
 
 # Load Athena Model
 input_shape = (8, 8, 20)
@@ -59,7 +71,7 @@ def update_move_vocab(move):
     with open("move_vocab.json", "w") as f:
         json.dump(move_vocab, f, indent=4)
 
-def play_vs_stockfish(skill_level, athena_is_white):
+def play_vs_stockfish(skill_level, athena_is_white, epoch):
     """Athena plays against Stockfish with increasing difficulty."""
     board = chess.Board()
     move_history = []
@@ -82,9 +94,12 @@ def play_vs_stockfish(skill_level, athena_is_white):
 
             if (board.turn == chess.WHITE and athena_is_white) or (board.turn == chess.BLACK and not athena_is_white):
                 # Athena plays
-                q_values = dqn_model([fen_tensor, move_history_encoded, legal_moves_mask, turn_indicator])
-                move_index = np.argmax(q_values.numpy()[0])
-                athena_move = legal_moves[move_index] if move_index < len(legal_moves) else random.choice(legal_moves)
+                if random.random() < get_epsilon(epoch):  # Exploration decay
+                    athena_move = random.choice(legal_moves)
+                else:
+                    q_values = dqn_model([fen_tensor, move_history_encoded, legal_moves_mask, turn_indicator])
+                    move_index = np.argmax(q_values.numpy()[0])
+                    athena_move = legal_moves[move_index] if move_index < len(legal_moves) else random.choice(legal_moves)
             else:
                 # Stockfish plays
                 stockfish_move = stockfish.play(board, chess.engine.Limit(time=0.1))
@@ -138,7 +153,7 @@ def train_athena():
         print(f"\n🌟 Epoch {epoch + 1}/{EPOCHS} | Stockfish Skill Level: {skill_level} | White: {white_player}")
 
         # Play a game against Stockfish
-        play_vs_stockfish(skill_level, athena_is_white)
+        play_vs_stockfish(skill_level, athena_is_white, epoch)
         
         # Train DQN
         print(len(replay_buffer.buffer))

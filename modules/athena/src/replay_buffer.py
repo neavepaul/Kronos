@@ -4,7 +4,7 @@ from collections import deque
 
 # Replay Buffer Settings
 REPLAY_BUFFER_PATH = "replay_buffer.h5"
-REPLAY_BUFFER_SIZE = 50000
+REPLAY_BUFFER_SIZE = 2000
 
 class ReplayBuffer:
     def __init__(self, buffer_size=REPLAY_BUFFER_SIZE):
@@ -19,8 +19,19 @@ class ReplayBuffer:
         self.buffer.append((state, action, reward, next_state, done))
     
     def sample(self, batch_size):
-        """Samples a random batch from the buffer."""
-        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
+        """Samples a mix of recent and high-reward moves."""
+        recent_size = int(batch_size * 0.7)  # 70% recent moves
+        priority_size = batch_size - recent_size  # 30% high-reward moves
+
+        # Recent moves (last 10,000 moves)
+        recent_indices = np.random.choice(range(max(0, len(self.buffer) - 10000), len(self.buffer)), recent_size, replace=False)
+
+        # High-reward moves
+        rewards = np.array([abs(r) for _, _, r, _, _ in self.buffer])
+        prob = rewards / (rewards.sum() + 1e-8)  # Normalize
+        priority_indices = np.random.choice(len(self.buffer), priority_size, replace=False, p=prob)
+
+        indices = np.concatenate([recent_indices, priority_indices])
         batch = [self.buffer[i] for i in indices]
         states, actions, rewards, next_states, dones = zip(*batch)
         return list(states), list(actions), list(rewards), list(next_states), list(dones)

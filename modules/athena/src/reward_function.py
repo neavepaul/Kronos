@@ -22,6 +22,9 @@ AVOID_REPETITION_PENALTY = -6.0  # Penalize unnecessary repetition
 # Encourage pawn moves in the opening (first 10 moves)
 OPENING_PAWN_MOVES = {"e2e4", "d2d4", "c2c4", "f2f4", "g2g3", "b2b3"}
 OPENING_PAWN_REWARD = 0.6  # Higher than other positional rewards
+CENTER_SQUARES = {"d4", "e4", "d5", "e5"}
+CENTER_CONTROL_REWARD = 0.3  # Encourages occupying center
+DEVELOPMENT_REWARD = 0.5  # Encourages developing minor pieces
 
 def compute_reward(board_before, board_after, athena_move, game_result):
     """
@@ -151,11 +154,21 @@ def compute_reward(board_before, board_after, athena_move, game_result):
     move_count = len(board_after.move_stack)
     opening_pawn_reward = OPENING_PAWN_REWARD if move_count < 10 and str(athena_move) in OPENING_PAWN_MOVES else 0
 
+
     # Total Reward
     total_reward = (
         material_reward + castling_reward + promotion_reward + en_passant_reward + check_reward +
         fork_reward + pin_reward + skewer_reward + trapped_piece_reward + 
         passed_pawn_reward + king_activity_reward + repetition_penalty + opening_pawn_reward + final_reward
     )
+    # Encourage Center Control
+    if str(athena_move)[-2:] in CENTER_SQUARES:
+        total_reward += CENTER_CONTROL_REWARD
+
+    # Encourage Piece Development
+    if len(board_after.move_stack) < 10:  # First 10 moves
+        moved_piece = board_after.piece_at(athena_move.to_square)
+        if moved_piece and moved_piece.piece_type in {chess.KNIGHT, chess.BISHOP}:
+            total_reward += DEVELOPMENT_REWARD
 
     return total_reward

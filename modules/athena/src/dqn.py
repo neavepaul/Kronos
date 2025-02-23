@@ -2,9 +2,9 @@ import os
 import json
 import tensorflow as tf
 import numpy as np
-from utils import fen_to_tensor, move_to_index, build_move_vocab
+from modules.athena.src.utils import fen_to_tensor, move_to_index, build_move_vocab
 from tensorflow.keras import layers, Model
-from model import TransformerBlock  # Use the Transformer block from original model
+from modules.athena.src.model import TransformerBlock  # Use the Transformer block from original model
 
 MAX_VOCAB_SIZE = 500000
 TARGET_UPDATE_FREQUENCY = 500  # Update target network every N steps
@@ -86,15 +86,15 @@ class DQN(tf.keras.Model):
         )
 
 
-# Load move vocabulary
-VOCAB_FILE = "move_vocab.json"
+# Load move vocabulary (IF TRAINING ONLY)
+# VOCAB_FILE = "move_vocab.json"
 
-if os.path.exists(VOCAB_FILE):
-    with open(VOCAB_FILE, "r") as f:
-        move_vocab = json.load(f)
-else:
-    print("🚨 No move vocabulary found! Creating a new one...")
-    move_vocab = {}  # Start empty
+# if os.path.exists(VOCAB_FILE):
+#     with open(VOCAB_FILE, "r") as f:
+#         move_vocab = json.load(f)
+# else:
+#     print("No move vocabulary found! Creating a new one...")
+#     move_vocab = {}  # Start empty
 
 
 def train_dqn(dqn_model, replay_buffer, gamma=0.99, training_step=0):
@@ -109,7 +109,7 @@ def train_dqn(dqn_model, replay_buffer, gamma=0.99, training_step=0):
     valid_indices = [i for i, ns in enumerate(next_states) if ns is not None]
 
     if not valid_indices:
-        print("⚠️ No valid next states in replay buffer. Skipping training step.")
+        print("No valid next states in replay buffer. Skipping training step.")
         return None
 
     states = [states[i] for i in valid_indices]

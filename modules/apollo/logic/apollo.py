@@ -1,6 +1,5 @@
 import chess
 import chess.polyglot
-import random
 
 class Apollo:
     def __init__(self, book_path):
@@ -8,13 +7,14 @@ class Apollo:
         self.book = chess.polyglot.open_reader(book_path)
 
     def get_opening_move(self, board):
-        """Retrieves an opening move from Apollo's book, chosen randomly."""
+        """Retrieves the best opening move from Apollo's book (highest weight)."""
         try:
             book_moves = list(self.book.find_all(board))
             if book_moves:
-                chosen_move = random.choice(book_moves).move
-                print(f"📖 Apollo Opening Move: {chosen_move}")
-                return chosen_move
+                # Sort moves by weight (descending) and select the best one
+                best_move = max(book_moves, key=lambda move: move.weight).move
+                print(f"📖 Apollo Opening Move: {best_move}")
+                return best_move
         except StopIteration:
             pass
 

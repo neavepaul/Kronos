@@ -12,10 +12,10 @@ sys.path.append(str(ROOT_PATH))
 # Import Modules
 from modules.athena.src.athena import Athena
 from modules.apollo.logic.apollo import Apollo
-from modules.hades.logic.hades import Hades
+from modules.hades.logic.hades import Hades2
 
-# 🔄 GUI Toggle: Set to False for headless mode
-ENABLE_GUI = False
+# 🔄 GUI Toggle: Set to False for headless mode (saves RAM)
+ENABLE_GUI = True
 
 if ENABLE_GUI:
     import pygame
@@ -23,20 +23,21 @@ if ENABLE_GUI:
 # Paths
 STOCKFISH_PATH = ROOT_PATH / "modules/shared/stockfish/stockfish-windows-x86-64-avx2.exe"
 APOLLO_BOOK_PATH = ROOT_PATH / "modules/apollo/logic/data/merged_book.bin"
-MODEL_PATH = ROOT_PATH / "modules/athena/src/models/athena_gm_trained_20250211_090344_10epochs.keras"
+MODEL_PATH = ROOT_PATH / "modules/athena/src/models/athena_DQN_20250218_205619_200epochs.keras"
 MOVE_VOCAB_PATH = ROOT_PATH / "modules/athena/src/move_vocab.json"
-SYZYGY_PATH = ROOT_PATH / "modules/hades/logic/syzygy/"
 
 # Initialize Modules
 apollo = Apollo(APOLLO_BOOK_PATH)
 athena = Athena(MODEL_PATH, MOVE_VOCAB_PATH)
-hades = Hades(SYZYGY_PATH)
+hades = Hades2()
 
+use_apollo = True  # Keep using Apollo until he has no book moves
+
+# 🎨 GUI Settings (Only if enabled)
 if ENABLE_GUI:
-    # GUI Settings
     BOARD_SIZE = 600
     SQUARE_SIZE = BOARD_SIZE // 8
-    INFO_HEIGHT = 100  # Space for Stockfish eval and history
+    INFO_HEIGHT = 100  # Space for Stockfish eval and move history
     pygame.init()
     screen = pygame.display.set_mode((BOARD_SIZE, BOARD_SIZE + INFO_HEIGHT))
     pygame.display.set_caption("Zeus: Apollo + Athena + Hades")
@@ -44,12 +45,19 @@ if ENABLE_GUI:
     # Colors
     WHITE = (238, 238, 210)
     BLACK = (118, 150, 86)
-    BUTTON_COLOR = (70, 130, 180)
-    TEXT_COLOR = (255, 255, 255)
     BG_COLOR = (30, 30, 30)
+    TEXT_COLOR = (255, 255, 255)
+    BUTTON_COLOR = (70, 130, 180)
 
-    # Font
+    # Load Font
     font = pygame.font.Font(None, 32)
+
+    # Load Chess Piece Images
+    pieces_images = {}
+    piece_types = ["wp", "wn", "wb", "wr", "wq", "wk", "bp", "bn", "bb", "br", "bq", "bk"]
+    for piece in piece_types:
+        image = pygame.image.load(str(ROOT_PATH / f"modules/shared/assets/{piece}.png"))
+        pieces_images[piece] = pygame.transform.scale(image, (SQUARE_SIZE, SQUARE_SIZE))
 
 def draw_board(board, eval_score=None, move_history=[]):
     """Draws an 8x8 chessboard with pieces and Stockfish evaluation if GUI is enabled."""
@@ -58,118 +66,137 @@ def draw_board(board, eval_score=None, move_history=[]):
 
     screen.fill(BG_COLOR)
 
-    # Draw board
+    # Draw Board
     for row in range(8):
         for col in range(8):
             color = WHITE if (row + col) % 2 == 0 else BLACK
             pygame.draw.rect(screen, color, pygame.Rect(col * SQUARE_SIZE, row * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE))
 
-    # Draw pieces
+    # Draw Pieces
     for square in chess.SQUARES:
         piece = board.piece_at(square)
         if piece:
             row, col = divmod(square, 8)
             piece_str = f"{'w' if piece.color == chess.WHITE else 'b'}{piece.symbol().lower()}"
-            image_path = ROOT_PATH / f"modules/shared/assets/{piece_str}.png"
-            piece_image = pygame.image.load(str(image_path))
-            piece_image = pygame.transform.scale(piece_image, (SQUARE_SIZE, SQUARE_SIZE))
-            screen.blit(piece_image, (col * SQUARE_SIZE, row * SQUARE_SIZE))
+            screen.blit(pieces_images[piece_str], (col * SQUARE_SIZE, row * SQUARE_SIZE))
 
-    # Draw evaluation score
+    # Draw Stockfish Evaluation
     eval_text = f"Stockfish Eval: {eval_score / 100:.2f}" if eval_score is not None else "Evaluating..."
     eval_surface = font.render(eval_text, True, TEXT_COLOR)
     screen.blit(eval_surface, (20, BOARD_SIZE + 10))
 
-    # Draw last 5 moves
+    # Draw Last 5 Moves
     history_text = "Moves: " + " ".join(move_history[-5:])
     history_surface = font.render(history_text, True, TEXT_COLOR)
     screen.blit(history_surface, (20, BOARD_SIZE + 40))
 
     pygame.display.flip()
 
-def draw_selection_screen():
-    """Draws the screen for selecting Athena's side. Skips if GUI is disabled."""
-    if not ENABLE_GUI:
-        athena_side = input("Choose Athena's side (white/black): ").strip().lower()
-        return chess.WHITE if athena_side == "white" else chess.BLACK
-
-    screen.fill(BG_COLOR)
-
-    text = font.render("Select Athena's Side", True, TEXT_COLOR)
-    screen.blit(text, (BOARD_SIZE // 2 - text.get_width() // 2, 150))
-
-    button_rects = {
-        "white": pygame.Rect(50, 250, 200, 50),
-        "black": pygame.Rect(350, 250, 200, 50),
-    }
-
-    for key, rect in button_rects.items():
-        pygame.draw.rect(screen, BUTTON_COLOR, rect)
-        text = font.render(key.capitalize(), True, TEXT_COLOR)
-        screen.blit(text, (rect.x + 50, rect.y + 10))
-
-    pygame.display.flip()
-
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                exit()
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if button_rects["white"].collidepoint(event.pos):
-                    return chess.WHITE
-                if button_rects["black"].collidepoint(event.pos):
-                    return chess.BLACK
-
 def get_stockfish_eval(stockfish_engine, board):
     """Gets Stockfish evaluation for the board position."""
     eval_result = stockfish_engine.analyse(board, chess.engine.Limit(depth=10))
     return eval_result["score"].relative.score(mate_score=10000)
 
+def count_pieces(board):
+    """Counts the number of pieces for each color."""
+    white_pieces = {"♙ Pawns": 0, "♘ Knights": 0, "♗ Bishops": 0, "♖ Rooks": 0, "♕ Queens": 0, "♔ King": 0}
+    black_pieces = {"♟ Pawns": 0, "♞ Knights": 0, "♝ Bishops": 0, "♜ Rooks": 0, "♛ Queens": 0, "♚ King": 0}
+
+    piece_symbols = {
+        chess.PAWN: ("♙ Pawns", "♟ Pawns"),
+        chess.KNIGHT: ("♘ Knights", "♞ Knights"),
+        chess.BISHOP: ("♗ Bishops", "♝ Bishops"),
+        chess.ROOK: ("♖ Rooks", "♜ Rooks"),
+        chess.QUEEN: ("♕ Queens", "♛ Queens"),
+        chess.KING: ("♔ King", "♚ King"),
+    }
+
+    for square, piece in board.piece_map().items():
+        if piece.color == chess.WHITE:
+            white_pieces[piece_symbols[piece.piece_type][0]] += 1
+        else:
+            black_pieces[piece_symbols[piece.piece_type][1]] += 1
+
+    return white_pieces, black_pieces
+
 def play_game():
     """Runs the game loop where Zeus decides whether to use Apollo, Athena, or Hades."""
+    global use_apollo  # Track if Apollo should still be used
+
     board = chess.Board()
     move_history = []
-    athena_side = draw_selection_screen()  # Choose side for Athena
+    athena_side = chess.WHITE if input("Choose Athena's side (white/black): ").strip().lower() == "white" else chess.BLACK
 
     # Start Stockfish
     with chess.engine.SimpleEngine.popen_uci(str(STOCKFISH_PATH)) as stockfish_engine:
         while not board.is_game_over():
-            draw_board(board, None, move_history)
             time.sleep(1)
             move = None
+            move_source = "Stockfish"  # Default source
 
-            # 1️⃣ Apollo: Use opening book for the first 10 moves
-            if len(move_history) < 10:
+            # 🎭 **Apollo Opening Book (Use Until Empty)**
+            if use_apollo and board.turn == athena_side:
                 move = apollo.get_opening_move(board)
+                if move:
+                    move_source = "📖 Apollo"
+                else:
+                    use_apollo = False  # Stop using Apollo when no book move is found
 
-            # 2️⃣ Hades: Check for endgame (5 or fewer pieces)
-            if move is None and len(board.piece_map()) <= 5:
+            # ⚔️ **Hades Endgame (7 or fewer pieces)**
+            if move is None and len(board.piece_map()) <= 7 and board.turn == athena_side:
                 move = hades.get_best_endgame_move(board)
+                if move:
+                    move_source = "🔥 Hades"
 
-            # 3️⃣ Athena: If no Apollo or Hades move, predict using NN
+            # 🧠 **Athena Midgame (Neural Network)**
             if move is None and board.turn == athena_side:
-                eval_score = get_stockfish_eval(stockfish_engine, board)
-                move = athena.predict_move(board, move_history, eval_score)
+                print("♟️ Athena to move")
 
-            # 4️⃣ Stockfish plays if it's not Athena's turn
+                turn_indicator = 1 if board.turn == chess.WHITE else 0  # Set turn indicator
+                legal_moves_mask = np.zeros((64, 64))  # Initialize legal move mask
+                for legal_move in board.legal_moves:
+                    legal_moves_mask[legal_move.from_square, legal_move.to_square] = 1  # Mark legal moves
+
+                # Get move prediction from Athena
+                move = athena.predict_move(board.fen(), move_history, legal_moves_mask, turn_indicator)
+                move_source = "🧠 Athena"
+
+            # ♜ **Stockfish Plays If No Other Option**
             if move is None:
                 move = stockfish_engine.play(board, chess.engine.Limit(time=0.1)).move
+                move_source = "♜ Stockfish"
 
-            # Push move and update UI
+            # Push move and update history
             board.push(move)
             move_history.append(move.uci())
 
-            # Get Stockfish evaluation after Athena’s move
+            # Get Stockfish evaluation
             eval_score = get_stockfish_eval(stockfish_engine, board)
 
+            # Determine move color
+            move_color = "⚪ White" if board.turn == chess.BLACK else "⚫ Black"
+
+            # Get piece counts
+            white_pieces, black_pieces = count_pieces(board)
+
+            # 🖥️ Print move details in Terminal
+            print(f"{move_source} {move_color} → {move.uci()} | 📊 Eval: {eval_score / 100:.2f}")
+
+            # Print piece counts
+            print("\n♔ White Pieces:")
+            for piece, count in white_pieces.items():
+                print(f"   {piece}: {count}")
+
+            print("\n♚ Black Pieces:")
+            for piece, count in black_pieces.items():
+                print(f"   {piece}: {count}")
+            print("-" * 50)
+
+            # 🎨 Update GUI if enabled
             if ENABLE_GUI:
                 draw_board(board, eval_score, move_history)
-            else:
-                print(f"Move: {move.uci()} | Stockfish Eval: {eval_score / 100:.2f}")
 
         print(f"🏁 Game Over! Result: {board.result()}")
-        hades.close()  # Close tablebase when done
 
         if ENABLE_GUI:
             pygame.time.wait(5000)

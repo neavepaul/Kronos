@@ -3,110 +3,110 @@ import chess
 import time
 from bs4 import BeautifulSoup
 
-# Function to scrape Syzygy Tablebase website
-def query_syzygy_tables(fen):
-    url = f"https://syzygy-tables.info/?fen={fen.replace(' ', '_')}"
-    start = time.time()
-    response = requests.get(url)
-    end = time.time()
-    print(f"🕒 API Request Time: {end - start:.2f} seconds")
+class Hades2:
+    def __init__(self):
+        """Initialize Hades2 with web-based Syzygy tablebase querying."""
+        print("Hades2: Initialized with Syzygy.")
 
-    if response.status_code != 200:
-        print(f"⚠️ Syzygy Website Error: {response.status_code}")
-        return None
+    def query_syzygy_tables(self, fen):
+        """Queries the Syzygy tablebase website for best move and position evaluation."""
+        url = f"https://syzygy-tables.info/?fen={fen.replace(' ', '_')}"
+        start = time.time()
+        response = requests.get(url)
+        end = time.time()
 
-    soup = BeautifulSoup(response.text, "html.parser")
+        if response.status_code != 200:
+            print(f"⚠️ Syzygy Website Error: {response.status_code}")
+            return None
 
-    # Extract DTZ & DTM
-    dtz_span = soup.select_one("h2 span.badge:nth-of-type(2)")
-    dtm_span = soup.select_one("h2 span.badge:nth-of-type(1)")
+        print(f"🕒 API Request Time: {end - start:.2f} seconds")
+        soup = BeautifulSoup(response.text, "html.parser")
 
-    dtz = int(dtz_span.text.split()[-1]) if dtz_span else None
-    dtm = int(dtm_span.text.split()[-1]) if dtm_span else None
+        # Extract DTZ & DTM values
+        dtz_span = soup.select_one("h2 span.badge:nth-of-type(2)")
+        dtm_span = soup.select_one("h2 span.badge:nth-of-type(1)")
 
-    # Determine game status
-    status_header = soup.select_one("#status").text.strip().lower()
-    
-    if "white is winning" in status_header:
-        game_status = "🔥 White is Winning!"
-    elif "black is winning" in status_header:
-        game_status = "🔥 Black is Winning!"
-    elif "white is losing" in status_header:
-        game_status = "🚨 White is Losing!"
-    elif "black is losing" in status_header:
-        game_status = "🚨 Black is Losing!"
-    else:
-        game_status = "⚖️ Drawn position."
+        dtz = int(dtz_span.text.split()[-1]) if dtz_span else None
+        dtm = int(dtm_span.text.split()[-1]) if dtm_span else None
 
-    # Determine who has to move
-    turn_to_move = "White" if "_w_" in url else "Black"
+        # Extract game status
+        status_header = soup.select_one("#status").text.strip().lower()
 
-    # Extract Best Move
-    best_move_element = soup.select_one("#winning .li")
-    
-    if not best_move_element and "losing" in game_status.lower():
-        best_move_element = soup.select_one("#losing .li")
+        if "white is winning" in status_header:
+            game_status = "🔥 White is Winning!"
+        elif "black is winning" in status_header:
+            game_status = "🔥 Black is Winning!"
+        elif "white is losing" in status_header:
+            game_status = "🚨 White is Losing!"
+        elif "black is losing" in status_header:
+            game_status = "🚨 Black is Losing!"
+        else:
+            game_status = "⚖️ Drawn position."
 
-    best_move_uci = best_move_element["data-uci"] if best_move_element else None
+        # Determine turn to move
+        turn_to_move = "White" if "_w_" in url else "Black"
 
-    # Extract Win Probability Stats
-    win_stats = soup.select(".list-group.stats .li")
+        # Extract Best Move
+        best_move_element = soup.select_one("#winning .li")
 
-    try:
-        white_wins = int(win_stats[0].text.split(":")[1].strip().split(" ")[0].replace(",", ""))
-    except (IndexError, ValueError):
-        white_wins = 0
+        if not best_move_element and "losing" in game_status.lower():
+            best_move_element = soup.select_one("#losing .li")
 
-    try:
-        draws = int(win_stats[1].text.split(":")[1].strip().split(" ")[0].replace(",", ""))
-    except (IndexError, ValueError):
-        draws = 0
+        best_move_uci = best_move_element["data-uci"] if best_move_element else None
 
-    try:
-        black_wins = int(win_stats[2].text.split(":")[1].strip().split(" ")[0].replace(",", ""))
-    except (IndexError, ValueError):
-        black_wins = 0
+        # Extract Win Probability Stats
+        win_stats = soup.select(".list-group.stats .li")
 
-    total = white_wins + draws + black_wins
-    white_win_percent = (white_wins / total) * 100 if total > 0 else 0
-    draw_percent = (draws / total) * 100 if total > 0 else 0
-    black_win_percent = (black_wins / total) * 100 if total > 0 else 0
+        try:
+            white_wins = int(win_stats[0].text.split(":")[1].strip().split(" ")[0].replace(",", ""))
+        except (IndexError, ValueError):
+            white_wins = 0
 
-    return {
-        "dtz": dtz,
-        "dtm": dtm,
-        "game_status": game_status,
-        "turn_to_move": turn_to_move,
-        "best_move": best_move_uci,
-        "white_win_percent": white_win_percent,
-        "draw_percent": draw_percent,
-        "black_win_percent": black_win_percent
-    }
+        try:
+            draws = int(win_stats[1].text.split(":")[1].strip().split(" ")[0].replace(",", ""))
+        except (IndexError, ValueError):
+            draws = 0
 
-# Test Position
-fen = "8/8/8/1Q6/8/8/k7/2K5 w - - 0 1"
-board = chess.Board(fen)
+        try:
+            black_wins = int(win_stats[2].text.split(":")[1].strip().split(" ")[0].replace(",", ""))
+        except (IndexError, ValueError):
+            black_wins = 0
 
-# Query Syzygy Website
-tablebase_data = query_syzygy_tables(fen)
+        total = white_wins + draws + black_wins
+        white_win_percent = (white_wins / total) * 100 if total > 0 else 0
+        draw_percent = (draws / total) * 100 if total > 0 else 0
+        black_win_percent = (black_wins / total) * 100 if total > 0 else 0
 
-if tablebase_data:
-    # Get Data
-    white_win_percent = tablebase_data["white_win_percent"]
-    draw_percent = tablebase_data["draw_percent"]
-    black_win_percent = tablebase_data["black_win_percent"]
+        return {
+            "dtz": dtz,
+            "dtm": dtm,
+            "game_status": game_status,
+            "turn_to_move": turn_to_move,
+            "best_move": best_move_uci,
+            "white_win_percent": white_win_percent,
+            "draw_percent": draw_percent,
+            "black_win_percent": black_win_percent
+        }
 
-    turn_to_move = tablebase_data["turn_to_move"]
-    game_status = tablebase_data["game_status"]
-    best_move_uci = tablebase_data.get("best_move")
-    dtz = tablebase_data.get("dtz")
-    dtm = tablebase_data.get("dtm")
+    def get_best_endgame_move(self, board):
+        """Returns the best move for endgames (<=5 pieces) using online Syzygy tablebase."""
+        fen = board.fen()
+        if len(board.piece_map()) > 5:
+            return None  # Not an endgame, skip tablebase query
 
-    # Convert best move from UCI to SAN notation
-    best_move_san = board.san(chess.Move.from_uci(best_move_uci)) if best_move_uci else "None"
+        print(f"🔎 Hades2: Querying Syzygy for {fen}")
+        tablebase_data = self.query_syzygy_tables(fen)
 
-    # ASCII Stacked Bar Function
-    def stacked_bar(white_pct, draw_pct, black_pct, length=40):
+        if tablebase_data and tablebase_data.get("best_move"):
+            best_move_uci = tablebase_data["best_move"]
+            best_move = chess.Move.from_uci(best_move_uci)
+            print(f"🔥 Hades2: Best Endgame Move Found → {best_move_uci} ({board.san(best_move)})")
+            return best_move
+
+        return None  # No move found or position not covered
+
+    def stacked_bar(self, white_pct, draw_pct, black_pct, length=40):
+        """Creates an ASCII stacked bar to visualize win probabilities."""
         white_length = int((white_pct / 100) * length)
         draw_length = int((draw_pct / 100) * length)
         black_length = length - (white_length + draw_length)  # Remaining space
@@ -114,13 +114,26 @@ if tablebase_data:
         bar = "█" * white_length + "▒" * draw_length + "░" * black_length
         return f"|{bar}| {white_pct:.1f}% / {draw_pct:.1f}% / {black_pct:.1f}%"
 
-    # Display Stats in Terminal
-    print("\n" + "=" * 50)
-    print(f"♟️ {game_status}")
-    print(f"🔄 Turn to Move: {turn_to_move}")
-    print(f"📉 DTZ: {dtz} | 📈 DTM: {dtm}")
-    print(f"🔥 Best Move: {best_move_san}")
+    def print_endgame_summary(self, board):
+        """Prints a summary of the endgame evaluation."""
+        fen = board.fen()
+        tablebase_data = self.query_syzygy_tables(fen)
 
-    print("\n🎯 **Win Predictor Bar**")
-    print(stacked_bar(white_win_percent, draw_percent, black_win_percent))
-    print("=" * 50 + "\n")
+        if not tablebase_data:
+            print("⚠️ Hades2: No Syzygy data available.")
+            return
+
+        # Display Stats in Terminal
+        print("\n" + "=" * 50)
+        print(f"♟️ {tablebase_data['game_status']}")
+        print(f"🔄 Turn to Move: {tablebase_data['turn_to_move']}")
+        print(f"📉 DTZ: {tablebase_data.get('dtz', 'N/A')} | 📈 DTM: {tablebase_data.get('dtm', 'N/A')}")
+
+        best_move_uci = tablebase_data.get("best_move")
+        if best_move_uci:
+            best_move_san = board.san(chess.Move.from_uci(best_move_uci))
+            print(f"🔥 Best Move: {best_move_san} ({best_move_uci})")
+
+        print("\n🎯 **Win Predictor Bar**")
+        print(self.stacked_bar(tablebase_data["white_win_percent"], tablebase_data["draw_percent"], tablebase_data["black_win_percent"]))
+        print("=" * 50 + "\n")

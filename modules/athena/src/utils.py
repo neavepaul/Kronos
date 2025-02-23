@@ -9,7 +9,7 @@ VOCAB_FILE = "move_vocab.json"
 MAX_MOVE_HISTORY = 50  # Fixed-length move history
 
 
-### 1️⃣ Convert FEN to Tensor Representation
+# Convert FEN to Tensor Representation
 def fen_to_tensor(fen):
     """
     Converts a FEN string into a 8x8x20 tensor representation.
@@ -59,7 +59,7 @@ def fen_to_tensor(fen):
     return full_tensor
 
 
-### 2️⃣ Build Move Vocabulary from HDF5
+# Build Move Vocabulary from HDF5
 def build_move_vocab(hdf5_file=HDF5_FILE):
     """
     Builds a move vocabulary from an HDF5 dataset instead of JSON.
@@ -84,7 +84,7 @@ def build_move_vocab(hdf5_file=HDF5_FILE):
     return move_vocab
 
 
-### 3️⃣ Convert Move Sequences to Indexed List
+# Convert Move Sequences to Indexed List
 def move_to_index(move_history, move_vocab, max_sequence_length=50):
     """
     Converts a sequence of PFFTTU moves into indexed representation with padding.

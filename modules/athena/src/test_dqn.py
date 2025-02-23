@@ -11,7 +11,7 @@ from dqn import DQN  # Load DQN model
 
 # Paths
 STOCKFISH_PATH = "stockfish/stockfish-windows-x86-64-avx2.exe"
-MODEL_PATH = "models/athena_DQN_20250217_205755_200epochs.keras"
+MODEL_PATH = "models/athena_DQN_20250218_205619_200epochs.keras"
 
 # Load Athena Model
 dqn_model = tf.keras.models.load_model(
