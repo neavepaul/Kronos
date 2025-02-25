@@ -60,7 +60,7 @@ class DQN(tf.keras.Model):
         return self.model(inputs)
 
     def update_target_network(self):
-        """Soft update target network weights using TAU (Polyak averaging)."""
+        """Soft update target network weights using Polyak averaging."""
         model_weights = np.array(self.model.get_weights(), dtype=object)
         target_weights = np.array(self.target_model.get_weights(), dtype=object)
         new_weights = TAU * model_weights + (1 - TAU) * target_weights
@@ -87,14 +87,14 @@ class DQN(tf.keras.Model):
 
 
 # Load move vocabulary (IF TRAINING ONLY)
-# VOCAB_FILE = "move_vocab.json"
+VOCAB_FILE = "move_vocab.json"
 
-# if os.path.exists(VOCAB_FILE):
-#     with open(VOCAB_FILE, "r") as f:
-#         move_vocab = json.load(f)
-# else:
-#     print("No move vocabulary found! Creating a new one...")
-#     move_vocab = {}  # Start empty
+if os.path.exists(VOCAB_FILE):
+    with open(VOCAB_FILE, "r") as f:
+        move_vocab = json.load(f)
+else:
+    print("No move vocabulary found! Creating a new one...")
+    move_vocab = {}  # Start empty
 
 
 def train_dqn(dqn_model, replay_buffer, gamma=0.99, training_step=0):

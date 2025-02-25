@@ -1,0 +1,66 @@
+2025-02-25 21:10:17,487 - From C:\Users\neave\Documents\GitHub\Kronos\modules\athena\venv\Lib\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-02-25 21:10:18,662 - Training Athena Started...
+2025-02-25 21:10:18,662 - Epoch 1/200 | Stockfish Skill: 3 | Athena White
+2025-02-25 21:21:01,166 - From C:\Users\neave\Documents\GitHub\Kronos\modules\athena\venv\Lib\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-02-25 21:21:02,325 - Training Athena Started...
+2025-02-25 21:21:02,325 - Epoch 1/200 | Stockfish Skill: 1 | Athena White
+2025-02-25 21:29:04,494 - From C:\Users\neave\Documents\GitHub\Kronos\modules\athena\venv\Lib\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-02-25 21:29:05,670 - Training Athena Started...
+2025-02-25 21:29:05,670 - Epoch 1/200 | Stockfish Skill: 3 | Athena Black
+2025-02-25 21:29:11,473 - Move 1: c2c3 (Stockfish) | Eval Change: -0.02
+2025-02-25 21:29:16,785 - Move 2: g8f6 (Athena) | Eval Change: 0.01
+2025-02-25 21:29:23,163 - Move 3: e2e3 (Stockfish) | Eval Change: -0.01
+2025-02-25 21:29:28,080 - Move 4: b7b5 (Athena) | Eval Change: 0.02
+2025-02-25 21:29:33,816 - Move 5: f1b5 (Stockfish) | Eval Change: -0.01
+2025-02-25 21:29:39,421 - Move 6: c7c5 (Athena) | Eval Change: 0.01
+2025-02-25 21:29:44,786 - Move 7: b5a4 (Stockfish) | Eval Change: -0.01
+2025-02-25 21:29:51,145 - Move 8: f6g4 (Athena) | Eval Change: 0.05
+2025-02-25 21:29:58,539 - Move 9: d1g4 (Stockfish) | Eval Change: -0.00
+2025-02-25 21:30:11,747 - Move 10: h7h6 (Athena) | Eval Change: 0.02
+2025-02-25 21:30:22,180 - Move 11: h2h4 (Stockfish) | Eval Change: -0.02
+2025-02-25 21:30:29,955 - Move 12: h8h7 (Athena) | Eval Change: 0.07
+2025-02-25 21:30:38,612 - Move 13: d2d4 (Stockfish) | Eval Change: -0.05
+2025-02-25 21:30:48,475 - Move 14: g7g6 (Athena) | Eval Change: 0.01
+2025-02-25 21:30:56,862 - Move 15: g1e2 (Stockfish) | Eval Change: -0.01
+2025-02-25 21:31:06,364 - Move 16: d8c7 (Athena) | Eval Change: 0.01
+2025-02-25 21:31:15,953 - Move 17: h4h5 (Stockfish) | Eval Change: -0.00
+2025-02-25 21:31:24,001 - Move 18: c7g3 (Athena) | Eval Change: 0.14
+2025-02-25 21:31:30,021 - Move 19: g4g3 (Stockfish) | Eval Change: -0.00
+2025-02-25 21:31:36,852 - Move 20: h7g7 (Athena) | Eval Change: 0.04
+2025-02-25 21:31:42,942 - Move 21: h5g6 (Stockfish) | Eval Change: -0.05
+2025-02-25 21:31:48,201 - Move 22: f7f6 (Athena) | Eval Change: 0.06
+2025-02-25 21:31:55,585 - Move 23: e3e4 (Stockfish) | Eval Change: -0.04
+2025-02-25 21:32:04,260 - Move 24: e7e5 (Athena) | Eval Change: 0.05
+2025-02-25 21:32:11,744 - Move 25: e2f4 (Stockfish) | Eval Change: -0.09
+2025-02-25 21:32:22,100 - Move 26: c5d4 (Athena) | Eval Change: 0.06
+2025-02-25 21:32:29,613 - Move 27: f4d5 (Stockfish) | Eval Change: -0.01
+2025-02-25 21:32:37,617 - Move 28: e8d8 (Athena) | Eval Change: 0.00
+2025-02-25 21:32:45,103 - Move 29: c1h6 (Stockfish) | Eval Change: -0.00
+2025-02-25 21:32:51,764 - Move 30: f6f5 (Athena) | Eval Change: 0.17
+2025-02-25 21:32:58,505 - Move 31: h6g5 (Stockfish) | Eval Change: 999.59
+2025-02-25 21:33:04,318 - Move 32: g7e7 (Athena) | Eval Change: -1000.00
+2025-02-25 21:33:10,135 - Move 33: h1h8 (Stockfish) | Eval Change: 1000.00
+2025-02-25 21:33:16,292 - Move 34: a7a5 (Athena) | Eval Change: -1000.00
+2025-02-25 21:33:21,417 - Move 35: g5e7 (Stockfish) | Eval Change: 1000.00
+2025-02-25 21:33:27,364 - Move 36: d8e8 (Athena) | Eval Change: -1000.00
+2025-02-25 21:33:34,923 - Move 37: g3e5 (Stockfish) | Eval Change: 1000.00
+2025-02-25 21:33:40,754 - Move 38: d4d3 (Athena) | Eval Change: -1000.00
+2025-02-25 21:36:03,090 - From C:\Users\neave\Documents\GitHub\Kronos\modules\athena\venv\Lib\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-02-25 21:36:04,258 - Training Athena Started...
+2025-02-25 21:36:04,258 - Epoch 1/200 | Stockfish Skill: 1 | Athena Black
+2025-02-25 21:36:08,320 - Move 1: c2c3 (Stockfish) | Eval Change: 0.00
+2025-02-25 21:36:52,515 - From C:\Users\neave\Documents\GitHub\Kronos\modules\athena\venv\Lib\site-packages\keras\src\backend\tensorflow\core.py:216: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2025-02-25 21:36:53,639 - Training Athena Started...
+2025-02-25 21:36:53,639 - Epoch 1/200 | Stockfish Skill: 0 | Athena White
+2025-02-25 21:36:59,257 - Move 1: a2a3 (Athena) | Eval Change: -0.31
+2025-02-25 21:37:03,703 - Move 2: e7e6 (Stockfish) | Eval Change: -0.05
+2025-02-25 21:37:08,381 - Move 3: h2h3 (Athena) | Eval Change: 0.14
+2025-02-25 21:37:11,897 - Move 4: f8e7 (Stockfish) | Eval Change: -0.19
+2025-02-25 21:37:15,360 - Move 5: a1a2 (Athena) | Eval Change: 0.58
+2025-02-25 21:37:18,801 - Move 6: c7c5 (Stockfish) | Eval Change: -1.21
+2025-02-25 21:37:22,419 - Move 7: b2b3 (Athena) | Eval Change: 1.28

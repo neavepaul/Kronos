@@ -1,174 +1,167 @@
 import tensorflow as tf
 import numpy as np
+import logging
 import chess
 import chess.engine
 import random
 import json
 from datetime import datetime
 from model import get_model
-from reward_function import compute_reward
-from dqn import DQN, train_dqn
-from replay_buffer import init_replay_buffer
-from utils import fen_to_tensor, move_to_index, build_move_vocab
 import os
-if os.path.exists("replay_buffer.h5"):
+import sys
+from pathlib import Path
+
+# Dynamically set the root path to the "Kronos" directory
+ROOT_PATH = Path(__file__).resolve().parents[3]  # Moves up to "Kronos/"
+sys.path.append(str(ROOT_PATH))
+
+from modules.athena.src.reward_function import compute_reward
+from modules.athena.src.actor_critic import ActorCritic, train_actor_critic
+from modules.athena.src.replay_buffer import init_replay_buffer
+from modules.athena.src.utils import fen_to_tensor, move_to_index, encode_move, get_attack_defense_maps, get_stockfish_eval_train
+
+
+if os.path.exists(ROOT_PATH / "modules/athena/src/replay_buffer.h5"):
     os.remove("replay_buffer.h5")
     print("🚀 Corrupt replay buffer deleted! Restart training.")
 
-
 # Load move vocabulary
 MAX_VOCAB_SIZE = 500000
-
-# move_vocab = build_move_vocab("move_vocab.json")
-with open("move_vocab.json", "r") as f:
+with open(ROOT_PATH / "modules/athena/src/move_vocab.json", "r") as f:
     move_vocab = json.load(f)
-
 
 # RL Hyperparameters
 LEARNING_RATE = 1e-4
-GAMMA = 0.99  # Discount factor for rewards
+GAMMA = 0.99
 BATCH_SIZE = 32
-EPOCHS = 200
+EPOCHS = 50
 
 # Paths
-STOCKFISH_PATH = "stockfish/stockfish-windows-x86-64-avx2.exe"
+STOCKFISH_PATH = ROOT_PATH / "modules/shared/stockfish/stockfish-windows-x86-64-avx2.exe"
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-MODEL_SAVE_PATH = f"models/athena_DQN_{timestamp}_{EPOCHS}epochs.keras"
+MODEL_SAVE_PATH = ROOT_PATH / f"modules/athena/src/models/athena_PPO_{timestamp}_{EPOCHS}epochs.keras"
+# Setup logging
+LOG_FILE = ROOT_PATH / "modules/athena/src/training_log.txt"
+logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format="%(asctime)s - %(message)s")
 
-EPSILON_START = 1.0  # Start fully random
-EPSILON_END = 0.01  # Final value
-EPSILON_DECAY = 0.995  # Slowly decay over time
-
-EPSILON = EPSILON_START  # Initialize
-
-def get_epsilon(epoch):
-    """Decay exploration rate each epoch."""
-    global EPSILON
-    EPSILON = max(EPSILON_END, EPSILON * EPSILON_DECAY)
-    return EPSILON
-
-
-# Load Athena Model
+# Initialize Model
 input_shape = (8, 8, 20)
 action_size = 64 * 64
-dqn_model = DQN(input_shape, action_size)
+actor_critic_model = ActorCritic(input_shape, action_size)
 
 # Experience Replay Buffer
 replay_buffer = init_replay_buffer()
-
-# Adaptive Move Vocabulary Management
-def update_move_vocab(move):
-    """Dynamically updates the move vocabulary, forgetting less useful moves."""
-    if move not in move_vocab:
-        if len(move_vocab) >= MAX_VOCAB_SIZE:
-            least_used_move = min(move_vocab, key=move_vocab.get)
-            del move_vocab[least_used_move]  # Remove least useful move
-        move_vocab[move] = 1  # Add new move
-    else:
-        move_vocab[move] += 1  # Increase usage count
-
-    # Save updated move vocabulary
-    with open("move_vocab.json", "w") as f:
-        json.dump(move_vocab, f, indent=4)
 
 def play_vs_stockfish(skill_level, athena_is_white, epoch):
     """Athena plays against Stockfish with increasing difficulty."""
     board = chess.Board()
     move_history = []
+    move_count = 0 
 
     with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as stockfish:
-        stockfish.configure({"Skill Level": skill_level})  # Set Stockfish strength
-        
-        while not board.is_game_over():
-            fen_before = board.fen()
-            legal_moves = list(board.legal_moves)
+        stockfish.configure({"Skill Level": skill_level})  
 
-            legal_moves_mask = np.zeros((64, 64), dtype=np.int8)
-            for legal_move in board.legal_moves:
-                legal_moves_mask[legal_move.from_square, legal_move.to_square] = 1
+        while not board.is_game_over():
+            move_count += 1
+            fen_before = board.fen()
+            attack_map, defense_map = get_attack_defense_maps(board)
 
             fen_tensor = np.expand_dims(fen_to_tensor(fen_before), axis=0)
             move_history_encoded = np.array(move_to_index(move_history, move_vocab), dtype=np.int32).reshape(1, 50)
-            legal_moves_mask = np.expand_dims(legal_moves_mask, axis=0)
+            attack_map = np.expand_dims(attack_map, axis=(0, -1))
+            defense_map = np.expand_dims(defense_map, axis=(0, -1))
             turn_indicator = np.array([[1.0 if board.turn == chess.WHITE else 0.0]], dtype=np.float32)
 
+            state = (fen_tensor, move_history_encoded, attack_map, defense_map, turn_indicator)
+
+            # Ensure legal_moves is a list of chess.Move objects
+            legal_moves_list = list(board.legal_moves)
+
             if (board.turn == chess.WHITE and athena_is_white) or (board.turn == chess.BLACK and not athena_is_white):
-                # Athena plays
-                if random.random() < get_epsilon(epoch):  # Exploration decay
-                    athena_move = random.choice(legal_moves)
+                # Check if the position exists in Game Memory
+                past_game = replay_buffer.game_memory.find_similar_position(board)
+                if past_game:
+                    print("♟️ Found similar position in memory. Recalling pattern.")
+                    suggested_move = chess.Move.from_uci(past_game["moves"][0])
                 else:
-                    q_values = dqn_model([fen_tensor, move_history_encoded, legal_moves_mask, turn_indicator])
-                    move_index = np.argmax(q_values.numpy()[0])
-                    athena_move = legal_moves[move_index] if move_index < len(legal_moves) else random.choice(legal_moves)
+                    suggested_move = None
+
+                action = actor_critic_model.sample_action(state, legal_moves_list)
+
+                # If a past move exists in memory, adjust probability
+                if suggested_move and suggested_move in legal_moves_list:
+                    action = suggested_move
             else:
-                # Stockfish plays
                 stockfish_move = stockfish.play(board, chess.engine.Limit(time=0.1))
-                athena_move = stockfish_move.move
+                action = stockfish_move.move
 
             board_before = board.copy()
-            board.push(athena_move)
-            move_history.append(athena_move.uci())
+            board.push(action)
+            move_history.append(action.uci())
+            fen_after = board.fen()
+            fen_tensor_after = np.expand_dims(fen_to_tensor(fen_after), axis=0)
+            
+            eval_before = get_stockfish_eval_train(fen_before)
+            eval_after = get_stockfish_eval_train(fen_after)
+            eval_change = eval_after - eval_before
 
             game_result = None
             if board.is_game_over():
                 outcome = board.outcome()
-                if outcome.winner is None:  # Draw
-                    game_result = 0
+                if outcome.winner is None:
+                    game_result = 0  # Draw
                 elif outcome.winner == chess.WHITE:
-                    game_result = 1
+                    game_result = 1  # White wins
                 else:
-                    game_result = -1
+                    game_result = -1  # Black wins
 
-            reward = compute_reward(board_before, board, athena_move, game_result)
-            next_fen = board.fen()
-            next_legal_moves_mask = np.zeros((64, 64), dtype=np.int8)
-            for legal_move in board.legal_moves:
-                next_legal_moves_mask[legal_move.from_square, legal_move.to_square] = 1
-            next_legal_moves_mask = np.expand_dims(next_legal_moves_mask, axis=0)
+            reward = compute_reward(board_before, board, action, game_result)
+            next_state = (fen_tensor_after, move_history_encoded, attack_map, defense_map, turn_indicator)
 
-            next_state = (next_fen, move_history_encoded, next_legal_moves_mask, turn_indicator)
+            encoded_move = encode_move(board_before, action)
 
-            replay_buffer.add((fen_before, move_history_encoded, legal_moves_mask, turn_indicator),
-                              athena_move.uci(), reward, next_state, board.is_game_over())
+            replay_buffer.add(state, encoded_move, reward, next_state, board.is_game_over(), eval_change)
+            print(f"Move {move_count}: {action.uci()} ({'Athena' if (board.turn != athena_is_white) else 'Stockfish'}) | Eval Change: {eval_change:.2f}")
+            logging.info(f"Move {move_count}: {action.uci()} ({'Athena' if (board.turn != athena_is_white) else 'Stockfish'}) | Eval Change: {eval_change:.2f}")
+
 
 def train_athena():
-    """Train Athena by playing against Stockfish."""
+    """Train Athena using PPO with graph-based encoding."""
+    print("\n Training Athena Started...\n")
+    logging.info("Training Athena Started...")
+    
     for epoch in range(EPOCHS):
-        # Adaptive difficulty range per epoch block
-        if epoch < 50:
-            skill_level = random.randint(0, 3)
-        elif epoch < 100:
-            skill_level = random.randint(4, 7)
-        elif epoch < 150:
-            skill_level = random.randint(8, 11)
-        elif epoch < 175:
-            skill_level = random.randint(12, 15)
-        else:
-            skill_level = random.randint(16, 20)
+        progress = epoch / EPOCHS
+        if progress < 0.25:
+            skill_level = random.randint(0, 3)  # Beginner
+        elif progress < 0.50:  # 25% - 50%
+            skill_level = random.randint(4, 7)  # Intermediate
+        elif progress < 0.75:  # 50% - 75%
+            skill_level = random.randint(8, 12)  # Advanced
+        elif progress < 0.90:  # 75% - 90%
+            skill_level = random.randint(13, 16)  # Strong
+        else:  # Last 10% of training
+            skill_level = random.randint(17, 20)  # Elite
 
-        # Assign random color to Athena
-        athena_is_white = bool(random.getrandbits(1))  
-        white_player = "Athena" if athena_is_white else "Stockfish"
+        athena_is_white = bool(random.getrandbits(1))  # Randomly assign color
 
-        print(f"\n🌟 Epoch {epoch + 1}/{EPOCHS} | Stockfish Skill Level: {skill_level} | White: {white_player}")
+        print(f"\n🟢 Epoch {epoch + 1}/{EPOCHS} | Stockfish Skill: {skill_level} | Athena {'White' if athena_is_white else 'Black'}")
+        logging.info(f"Epoch {epoch + 1}/{EPOCHS} | Stockfish Skill: {skill_level} | Athena {'White' if athena_is_white else 'Black'}")
 
-        # Play a game against Stockfish
         play_vs_stockfish(skill_level, athena_is_white, epoch)
-        
-        # Train DQN
-        print(len(replay_buffer.buffer))
-        all_transitions = replay_buffer  # Fetch all moves
-        loss = train_dqn(dqn_model, all_transitions, GAMMA)  # Train on the full game
-        
+        loss = train_actor_critic(actor_critic_model, replay_buffer, BATCH_SIZE)
+
         if loss is not None:
-            print(f"🎯 Training Step | Epoch {epoch + 1} | Loss: {np.mean(loss):.4f}")
+            print(f"📉 Training Loss: {loss:.6f}")
+            logging.info(f"📉 Training Loss: {loss:.6f}")
         else:
-            print("⚠️ Skipping training step - Not enough data in replay buffer.")
+            print("⚠️ Skipping training - Not enough data in replay buffer.")
+            logging.warning("⚠️ Skipping training - Not enough data in replay buffer.")
 
-    replay_buffer.save()
-    dqn_model.save(MODEL_SAVE_PATH)
-    print(f"💾 Model saved to {MODEL_SAVE_PATH}")
-
+    # Save model at the end
+    actor_critic_model.save(MODEL_SAVE_PATH)
+    print(f"\n💾 Training Complete! Model saved at: {MODEL_SAVE_PATH}")
+    logging.info(f"\n💾 Training Complete! Model saved at: {MODEL_SAVE_PATH}")
 
 
 if __name__ == "__main__":

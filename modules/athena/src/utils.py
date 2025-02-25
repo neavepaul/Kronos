@@ -1,12 +1,19 @@
 import json
 import os
 import h5py
+import chess
+import chess.engine
 import numpy as np
 import tensorflow as tf
+import random
+import requests
 
 HDF5_FILE = "training_data/training_data.hdf5"
 VOCAB_FILE = "move_vocab.json"
 MAX_MOVE_HISTORY = 50  # Fixed-length move history
+STOCKFISH_API = "https://stockfish.online/api/s/v2.php"
+
+STOCKFISH_PATH = "stockfish/stockfish-windows-x86-64-avx2.exe"
 
 
 # Convert FEN to Tensor Representation
@@ -116,10 +123,158 @@ def load_move_vocab():
         return json.load(f)
 
 
-### 5️⃣ Convert Indexed Moves Back to String
-def index_to_move(indexed_moves, move_vocab):
+
+def index_to_move(move_index, board):
     """
-    Converts indexed moves back to human-readable PFFTTU format.
+    Converts an integer move index back into a valid chess move.
+
+    Parameters:
+        move_index (int): The index of the move (0-4095, assuming max 64x64 moves).
+        board (chess.Board): The current chess board.
+
+    Returns:
+        chess.Move: The corresponding move.
     """
-    reverse_vocab = {idx: move for move, idx in move_vocab.items()}
-    return [reverse_vocab.get(idx, "[UNK]") for idx in indexed_moves]
+    legal_moves = list(board.legal_moves)  # Get all legal moves
+
+    if move_index < len(legal_moves):  # Ensure the index is valid
+        return legal_moves[move_index]
+    
+    # Fallback: If move index is invalid, choose a random legal move
+    return random.choice(legal_moves)
+
+
+def get_stockfish_eval(fen, depth=12):
+    """
+    Fetches the Stockfish evaluation for a given position via API.
+
+    Returns:
+        float: Evaluation score in pawns.
+               - Positive = White is better
+               - Negative = Black is better
+               - ±1000 for checkmate situations
+               - 0 if API fails
+    """
+    try:
+        response = requests.get(STOCKFISH_API, params={"fen": fen, "depth": depth})
+        data = response.json()
+
+        if not data.get("success"):
+            return 0  # Default if API call fails
+        
+        if "mate" in data and data["mate"] is not None:
+            return 1000 if data["mate"] > 0 else -1000  # Checkmate detected
+        
+        return data.get("evaluation", 0) / 100  # Convert centipawn to pawns
+    except Exception as e:
+        print(f"⚠️ Stockfish API Error: {e}")
+        return 0  # Return neutral eval if API fails
+
+
+def get_stockfish_eval_train(fen, stockfish_path=STOCKFISH_PATH, depth=12):
+    """
+    Fetches the Stockfish evaluation for a given position using local Stockfish engine.
+
+    Returns:
+        float: Evaluation score in pawns.
+               - Positive = White is better
+               - Negative = Black is better
+               - ±1000 for checkmate situations
+               - 0 if Stockfish fails
+    """
+    try:
+        with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
+            board = chess.Board(fen)
+            info = engine.analyse(board, chess.engine.Limit(depth=depth))
+            eval_score = info["score"].relative  # Get relative evaluation
+            
+            if eval_score.is_mate():
+                return 1000 if eval_score.mate() > 0 else -1000  # Checkmate detected
+            
+            return eval_score.score() / 100  # Convert centipawn to pawns
+    except Exception as e:
+        print(f"⚠️ Stockfish Local Eval Error: {e}")
+        return 0  # Return neutral eval if engine call fails
+
+def get_attack_defense_maps(board):
+    """
+    Computes attack and defense maps for each square on the board.
+    Returns:
+        attack_map (8x8): Number of pieces attacking each square.
+        defense_map (8x8): Number of pieces defending each square.
+    """
+    attack_map = np.zeros((8, 8), dtype=np.int8)
+    defense_map = np.zeros((8, 8), dtype=np.int8)
+
+    for square in chess.SQUARES:
+        attackers = board.attackers(chess.WHITE, square) | board.attackers(chess.BLACK, square)
+        defenders = board.attackers(board.turn, square)
+        
+        row, col = divmod(square, 8)
+        attack_map[row, col] = len(attackers)
+        defense_map[row, col] = len(defenders)
+
+    return attack_map, defense_map
+
+
+def encode_move_relations(board, move):
+    """
+    Encodes move relationships by tracking board control changes.
+    """
+    from_square = move.from_square
+    to_square = move.to_square
+    piece = board.piece_at(from_square)
+
+    # Before Move
+    attack_before, defense_before = get_attack_defense_maps(board)
+
+    # Apply Move
+    board.push(move)
+    attack_after, defense_after = get_attack_defense_maps(board)
+
+    # Compute Changes
+    changes = []
+    for r in range(8):
+        for c in range(8):
+            if attack_after[r, c] != attack_before[r, c]:
+                changes.append({"square": (r, c), "change": "control"})
+            if defense_after[r, c] != defense_before[r, c]:
+                changes.append({"square": (r, c), "change": "influence"})
+
+    # Undo Move
+    board.pop()
+
+    return changes
+
+
+def encode_move(board, move):
+    """
+    Converts a chess move into an enriched representation including attack/defense maps and positional motifs.
+    """
+    piece = board.piece_at(move.from_square)
+    piece_symbol = piece.symbol().upper() if piece else "?"
+
+    move_relations = encode_move_relations(board, move)
+
+    attack_map, defense_map = get_attack_defense_maps(board)
+
+    # Determine Game Phase
+    num_pieces = len(board.piece_map())
+    if num_pieces > 20:
+        game_phase = "opening"
+    elif num_pieces > 10:
+        game_phase = "middlegame"
+    else:
+        game_phase = "endgame"
+
+    return {
+        "move": move.uci(),
+        "from": divmod(move.from_square, 8),
+        "to": divmod(move.to_square, 8),
+        "piece_type": piece_symbol,
+        "move_type": "capture" if board.is_capture(move) else "push",
+        "piece_relations": move_relations,
+        "attack_map": attack_map.tolist(),
+        "defense_map": defense_map.tolist(),
+        "game_phase": game_phase
+    }
