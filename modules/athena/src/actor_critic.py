@@ -99,43 +99,92 @@ class ActorCritic(Model):
         move_index = tf.random.categorical(tf.math.log(move_probs), num_samples=1).numpy()[0, 0]
 
         if move_index < len(legal_moves_list):
-            return legal_moves_list[move_index]  # ✅ Guaranteed legal move
+            return legal_moves_list[move_index]  # Guaranteed legal move
 
         return random.choice(legal_moves_list)  # Fallback safety
 
 def compute_advantage(rewards, values, gamma=GAMMA, lambda_=LAMBDA):
     """Computes GAE (Generalized Advantage Estimation) for PPO updates."""
+    rewards = np.array(rewards, dtype=np.float32).reshape(-1, 1)
+    values = np.array(values, dtype=np.float32).reshape(-1, 1)
+
     deltas = rewards[:-1] + gamma * values[1:] - values[:-1]
     advantages = np.zeros_like(deltas)
+    
     acc = 0
     for t in reversed(range(len(deltas))):
         acc = deltas[t] + gamma * lambda_ * acc
         advantages[t] = acc
-    return advantages
 
+    return advantages.reshape(-1, 1)
 
 def train_actor_critic(actor_critic_model, replay_buffer, batch_size=32):
     """Trains the Actor-Critic model using PPO updates."""
     if len(replay_buffer.buffer) < batch_size:
         return None
 
-    states, actions, rewards, next_states, dones = replay_buffer.sample(batch_size)
+    states, uci_moves, rewards, next_states, dones = replay_buffer.sample(batch_size)
+
+    # **Reconstruct Actions from Legal Moves**
+    actions = []
+    for state, uci_move in zip(states, uci_moves):
+        board_tensor, move_histories, attack_maps, defense_maps, turn_indicators = state
+        board = chess.Board()  # Initialize board
+
+        legal_moves_list = list(board.legal_moves)  # Get current legal moves
+        if uci_move in [m.uci() for m in legal_moves_list]:
+            move_index = [m.uci() for m in legal_moves_list].index(uci_move)  # Get index
+        else:
+            move_index = random.randint(0, len(legal_moves_list) - 1)  # Fallback random move index
+
+        actions.append(move_index)  # Store index, not move string
+
+    # Convert actions to NumPy array
+    actions = np.array(actions, dtype=np.int32).reshape(-1, 1)  # Shape (batch_size, 1)
+
+    # Unpack states into separate components
+    board_tensors, move_histories, attack_maps, defense_maps, turn_indicators = zip(*states)
+    next_board_tensors, next_move_histories, next_attack_maps, next_defense_maps, next_turn_indicators = zip(*next_states)
+
+    # Convert lists into numpy arrays
+    board_tensors = np.squeeze(np.array(board_tensors, dtype=np.float32), axis=1)
+    move_histories = np.squeeze(np.array(move_histories, dtype=np.int32), axis=1)
+    attack_maps = np.squeeze(np.array(attack_maps, dtype=np.float32), axis=1)
+    defense_maps = np.squeeze(np.array(defense_maps, dtype=np.float32), axis=1)
+    turn_indicators = np.squeeze(np.array(turn_indicators, dtype=np.float32), axis=1)
+
+    next_board_tensors = np.squeeze(np.array(next_board_tensors, dtype=np.float32), axis=1)
+    next_move_histories = np.squeeze(np.array(next_move_histories, dtype=np.int32), axis=1)
+    next_attack_maps = np.squeeze(np.array(next_attack_maps, dtype=np.float32), axis=1)
+    next_defense_maps = np.squeeze(np.array(next_defense_maps, dtype=np.float32), axis=1)
+    next_turn_indicators = np.squeeze(np.array(next_turn_indicators, dtype=np.float32), axis=1)
 
     # Compute value estimates
-    _, values = actor_critic_model.get_policy_value(states)
-    _, next_values = actor_critic_model.get_policy_value(next_states)
+    _, values = actor_critic_model.get_policy_value([
+        board_tensors, move_histories, attack_maps, defense_maps, turn_indicators
+    ])
+    _, next_values = actor_critic_model.get_policy_value([
+        next_board_tensors, next_move_histories, next_attack_maps, next_defense_maps, next_turn_indicators
+    ])
 
     # Compute advantages
     advantages = compute_advantage(rewards, values)
 
     with tf.GradientTape() as tape:
-        policy_logits, value_preds = actor_critic_model.get_policy_value(states)
+        policy_logits, value_preds = actor_critic_model.get_policy_value([
+            board_tensors, move_histories, attack_maps, defense_maps, turn_indicators
+        ])
 
         # Compute policy loss with PPO clipping
         action_probs = tf.nn.softmax(policy_logits)
-        selected_action_probs = tf.gather_nd(action_probs, actions)
+        actions = np.array(actions, dtype=np.int32).reshape(-1, 1)
+
+        # **Use move indices from legal moves list**
+        selected_action_probs = tf.gather_nd(action_probs, np.expand_dims(actions, axis=-1))
         old_action_probs = tf.stop_gradient(selected_action_probs)
         ratio = selected_action_probs / (old_action_probs + 1e-8)
+        
+        advantages = advantages.reshape(-1, 1)
 
         # Clipped surrogate loss
         clipped_ratio = tf.clip_by_value(ratio, 1 - EPSILON, 1 + EPSILON)

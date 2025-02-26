@@ -3,7 +3,7 @@ import chess
 import requests
 
 from modules.athena.src.game_memory import GameMemory
-from modules.athena.src.utils import get_stockfish_eval
+from modules.athena.src.utils import get_stockfish_eval_train
 
 # Standard Piece Values
 PIECE_VALUES = {"p": 1, "n": 3, "b": 3, "r": 5, "q": 9, "k": 0}  # King has no material value
@@ -34,8 +34,8 @@ def compute_reward(board_before, board_after, athena_move, game_result):
     color_factor = 1 if board_before.turn == chess.WHITE else -1  # White → +1, Black → -1
 
     # Fetch Stockfish evaluations
-    eval_before = get_stockfish_eval(str(board_before.fen())) * color_factor
-    eval_after = get_stockfish_eval(str(board_after.fen())) * color_factor
+    eval_before = get_stockfish_eval_train(str(board_before.fen())) * color_factor
+    eval_after = get_stockfish_eval_train(str(board_after.fen())) * color_factor
     eval_change = (eval_after - eval_before)  # Positive means improvement, negative means blunder
 
     # Major Game Outcomes

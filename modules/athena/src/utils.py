@@ -278,3 +278,19 @@ def encode_move(board, move):
         "defense_map": defense_map.tolist(),
         "game_phase": game_phase
     }
+
+def normalize_board(board):
+    """
+    Converts a board position to a **White-perspective FEN**.
+    If Black is to move, flips the board & converts to White's turn.
+    Used for recall and storage to ensure **color resilience**.
+    """
+    if board.turn == chess.WHITE:
+        return board  # No transformation needed
+
+    # **Flip the board for White perspective**
+    board_flipped = board.mirror()  # Flip ranks & pieces
+    board_flipped.turn = chess.WHITE  # Ensure it's White's turn
+
+    return board_flipped
+

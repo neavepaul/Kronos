@@ -34,7 +34,7 @@ with open(ROOT_PATH / "modules/athena/src/move_vocab.json", "r") as f:
 LEARNING_RATE = 1e-4
 GAMMA = 0.99
 BATCH_SIZE = 32
-EPOCHS = 50
+EPOCHS = 200
 
 # Paths
 STOCKFISH_PATH = ROOT_PATH / "modules/shared/stockfish/stockfish-windows-x86-64-avx2.exe"
@@ -119,11 +119,12 @@ def play_vs_stockfish(skill_level, athena_is_white, epoch):
             next_state = (fen_tensor_after, move_history_encoded, attack_map, defense_map, turn_indicator)
 
             encoded_move = encode_move(board_before, action)
-
-            replay_buffer.add(state, encoded_move, reward, next_state, board.is_game_over(), eval_change)
+            replay_buffer.add(state, encoded_move, reward, next_state, board.is_game_over(), eval_change, fen_after)
             print(f"Move {move_count}: {action.uci()} ({'Athena' if (board.turn != athena_is_white) else 'Stockfish'}) | Eval Change: {eval_change:.2f}")
             logging.info(f"Move {move_count}: {action.uci()} ({'Athena' if (board.turn != athena_is_white) else 'Stockfish'}) | Eval Change: {eval_change:.2f}")
 
+    print(f"Game Over. Result: {board.result()}")
+    logging.info(f"Game Over. Result: {board.result()}")
 
 def train_athena():
     """Train Athena using PPO with graph-based encoding."""
@@ -132,7 +133,7 @@ def train_athena():
     
     for epoch in range(EPOCHS):
         progress = epoch / EPOCHS
-        if progress < 0.25:
+        if progress < 0.25:    # 0% - 25%
             skill_level = random.randint(0, 3)  # Beginner
         elif progress < 0.50:  # 25% - 50%
             skill_level = random.randint(4, 7)  # Intermediate
@@ -140,7 +141,7 @@ def train_athena():
             skill_level = random.randint(8, 12)  # Advanced
         elif progress < 0.90:  # 75% - 90%
             skill_level = random.randint(13, 16)  # Strong
-        else:  # Last 10% of training
+        else:                  # Last 10%
             skill_level = random.randint(17, 20)  # Elite
 
         athena_is_white = bool(random.getrandbits(1))  # Randomly assign color
@@ -152,7 +153,7 @@ def train_athena():
         loss = train_actor_critic(actor_critic_model, replay_buffer, BATCH_SIZE)
 
         if loss is not None:
-            print(f"📉 Training Loss: {loss:.6f}")
+            print(f"Training Loss: {loss:.6f}")
             logging.info(f"📉 Training Loss: {loss:.6f}")
         else:
             print("⚠️ Skipping training - Not enough data in replay buffer.")
@@ -160,7 +161,7 @@ def train_athena():
 
     # Save model at the end
     actor_critic_model.save(MODEL_SAVE_PATH)
-    print(f"\n💾 Training Complete! Model saved at: {MODEL_SAVE_PATH}")
+    print(f"\nTraining Complete! Model saved at: {MODEL_SAVE_PATH}")
     logging.info(f"\n💾 Training Complete! Model saved at: {MODEL_SAVE_PATH}")
 
 

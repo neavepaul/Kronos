@@ -19,16 +19,19 @@ class ReplayBuffer:
     def __len__(self):
         return len(self.buffer)
     
-    def add(self, state, action, reward, next_state, done, eval_change):
+    def add(self, state, action, reward, next_state, done, eval_change, fen):
         """Adds an experience tuple with pattern recall."""
         adjusted_reward = reward + eval_change
-        
-        self.buffer.append((state, action, adjusted_reward, next_state, done))
+
+        # Store only the UCI move notation, NOT the full dictionary
+        uci_move = action["move"]
+
+        self.buffer.append((state, uci_move, adjusted_reward, next_state, done))
         self.eval_history.append(eval_change)
 
         if done:
             game_moves = [s[1] for s in self.buffer]
-            self.game_memory.add_game(game_moves, final_eval=eval_change)
+            self.game_memory.add_game(game_moves, final_eval=eval_change, final_fen=fen)
 
 
     def sample(self, batch_size):
