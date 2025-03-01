@@ -1,6 +1,7 @@
 import json
 import os
 import h5py
+import sqlite3
 import chess
 import chess.engine
 import numpy as np
@@ -9,11 +10,11 @@ import random
 import requests
 
 HDF5_FILE = "training_data/training_data.hdf5"
-VOCAB_FILE = "move_vocab.json"
 MAX_MOVE_HISTORY = 50  # Fixed-length move history
 STOCKFISH_API = "https://stockfish.online/api/s/v2.php"
 
 STOCKFISH_PATH = "stockfish/stockfish-windows-x86-64-avx2.exe"
+EVAL_DB_PATH = "eval_cache.sqlite"
 
 
 # Convert FEN to Tensor Representation
@@ -65,83 +66,34 @@ def fen_to_tensor(fen):
     full_tensor = np.concatenate((tensor, external_channels), axis=-1)  
     return full_tensor
 
+def init_eval_db():
+    conn = sqlite3.connect(EVAL_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS eval_cache (
+            fen TEXT PRIMARY KEY,
+            evaluation REAL
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
-# Build Move Vocabulary from HDF5
-def build_move_vocab(hdf5_file=HDF5_FILE):
-    """
-    Builds a move vocabulary from an HDF5 dataset instead of JSON.
-    """
-    moves = set()
+def get_cached_eval(fen):
+    conn = sqlite3.connect(EVAL_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT evaluation FROM eval_cache WHERE fen = ?", (fen,))
+    result = cursor.fetchone()
+    conn.close()
+    if result:
+        return result[0]
+    return None
 
-    with h5py.File(hdf5_file, "r") as hf:
-        move_histories = hf["move_histories"][:]  
-
-    for move_seq in move_histories:
-        for move in move_seq:
-            move_str = move.decode("ascii")  # Convert bytes to string
-            if move_str.strip() and move_str != "000000":  # Ignore padding
-                moves.add(move_str)
-
-    move_vocab = {move: idx+1 for idx, move in enumerate(sorted(moves))}
-    move_vocab["[PAD]"] = 0  # Padding token
-
-    with open(VOCAB_FILE, "w") as f:
-        json.dump(move_vocab, f, indent=4)
-
-    return move_vocab
-
-
-# Convert Move Sequences to Indexed List
-def move_to_index(move_history, move_vocab, max_sequence_length=50):
-    """
-    Converts a sequence of PFFTTU moves into indexed representation with padding.
-    """
-    if isinstance(move_history, str):  
-        move_history = [move_history]  # Convert single move to a list
-    
-    # Ensure each move is a string (handles NumPy scalars)
-    indexed_moves = [move_vocab.get(str(move), 0) for move in move_history]
-
-    if len(indexed_moves) < max_sequence_length:
-        indexed_moves = [0] * (max_sequence_length - len(indexed_moves)) + indexed_moves
-    else:
-        indexed_moves = indexed_moves[-max_sequence_length:]
-
-    return np.array(indexed_moves, dtype=np.int32)  
-
-
-### 4️⃣ Load Vocabulary from File
-def load_move_vocab():
-    """
-    Loads move vocabulary from JSON file.
-    """
-    if not os.path.exists(VOCAB_FILE):
-        print("🚨 Move vocabulary file not found. Generating new vocab...")
-        return build_move_vocab()
-
-    with open(VOCAB_FILE, "r") as f:
-        return json.load(f)
-
-
-
-def index_to_move(move_index, board):
-    """
-    Converts an integer move index back into a valid chess move.
-
-    Parameters:
-        move_index (int): The index of the move (0-4095, assuming max 64x64 moves).
-        board (chess.Board): The current chess board.
-
-    Returns:
-        chess.Move: The corresponding move.
-    """
-    legal_moves = list(board.legal_moves)  # Get all legal moves
-
-    if move_index < len(legal_moves):  # Ensure the index is valid
-        return legal_moves[move_index]
-    
-    # Fallback: If move index is invalid, choose a random legal move
-    return random.choice(legal_moves)
+def store_eval(fen, evaluation):
+    conn = sqlite3.connect(EVAL_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO eval_cache (fen, evaluation) VALUES (?, ?)", (fen, evaluation))
+    conn.commit()
+    conn.close()
 
 
 def get_stockfish_eval(fen, depth=12):
@@ -174,24 +126,25 @@ def get_stockfish_eval(fen, depth=12):
 def get_stockfish_eval_train(fen, stockfish_path=STOCKFISH_PATH, depth=12):
     """
     Fetches the Stockfish evaluation for a given position using local Stockfish engine.
-
-    Returns:
-        float: Evaluation score in pawns.
-               - Positive = White is better
-               - Negative = Black is better
-               - ±1000 for checkmate situations
-               - 0 if Stockfish fails
     """
     try:
+        cached_eval = get_cached_eval(fen)
+        if cached_eval is not None:
+            return cached_eval
+
         with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
             board = chess.Board(fen)
             info = engine.analyse(board, chess.engine.Limit(depth=depth))
-            eval_score = info["score"].relative  # Get relative evaluation
-            
+            eval_score = info["score"].relative
+
             if eval_score.is_mate():
-                return 1000 if eval_score.mate() > 0 else -1000  # Checkmate detected
+                value = 1000 if eval_score.mate() > 0 else -1000
+            else:
+                value = eval_score.score() / 100
+
+        store_eval(fen, value)
+        return value
             
-            return eval_score.score() / 100  # Convert centipawn to pawns
     except Exception as e:
         print(f"⚠️ Stockfish Local Eval Error: {e}")
         return 0  # Return neutral eval if engine call fails

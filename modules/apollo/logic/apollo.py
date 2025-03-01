@@ -13,7 +13,7 @@ class Apollo:
             if book_moves:
                 # Sort moves by weight (descending) and select the best one
                 best_move = max(book_moves, key=lambda move: move.weight).move
-                print(f"📖 Apollo Opening Move: {best_move}")
+                # print(f"📖 Apollo Opening Move: {best_move}")
                 return best_move
         except StopIteration:
             pass
