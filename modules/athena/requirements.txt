@@ -1,7 +1,8 @@
-chess
+chess>=1.10.0
 colorama
 h5py
-numpy
+numpy>=1.24.0
 pip
 setuptools
 tqdm
+tensorflow>=2.15.0

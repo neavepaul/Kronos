@@ -71,14 +71,11 @@ Communication between modules is facilitated by ZeroMQ, enabling parallel proces
 -   [x] Set up Zeus (Orchestrator) and game history tracking
 -   [x] Combine opening books for Apollo
 -   [x] Finalize Apollo's integration for opening book queries
--   [x] Implement Athena (Evaluation Module)
+-   [ ] Implement Athena (Evaluation Module)
 -   [ ] Implement Ares (Search Module)
--   [ ] Implement Hades (Tablebase Module)
--   [ ] Download 345
--   [ ] Download select 6 and 7
--   [ ] cleanup some 345 based on 6 and 7
+-   [x] Implement Hades (Tablebase Module)
 -   [ ] Train and deploy lightweight neural network for Athena
--   [ ] Actor critic for RL
+-   [ ] Keep Athena CPU for then Upgrade her to ONNX for GPU
 -   [ ] Quantisation FP16 and ONNX
 -   [ ] Set up caching for frequent tablebase queries in Hades
 -   [ ] Stockfish 17 ARMv8 Dot Product at Zeus

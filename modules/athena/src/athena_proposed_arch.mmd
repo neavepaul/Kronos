@@ -1,47 +1,60 @@
 %%{init: {'theme': 'dark', 'themeVariables': { 'textColor': '#FFF' }}}%%
 graph TD
     %% Inputs
-    FEN["FEN Tensor (8x8x20)"] --> Athena
-    MoveHistory["Move History Sequence"] --> Athena
-    LegalMask["Legal Move Mask (64x64)"] --> Athena
-    Color["Color Flag (White/Black)"] --> Athena
+    FEN["Board State (8x8x20)"] --> Network
+    History["Move History (50)"] --> Network
+    AttackMap["Attack Map (8x8)"] --> Network
+    DefenseMap["Defense Map (8x8)"] --> Network
 
-    %% Athena Core Processing
-    subgraph Athena[Athena Model]
+    %% Neural Network Architecture
+    subgraph Network[AlphaNet Neural Network]
         direction TB
-        Encoder[Spatial Encoder CNN + Transformer] --> FromEmbed["From Square Embeddings (64x128)"]
-        Encoder --> ToEmbed["To Square Embeddings (64x128)"]
-        MoveHistEnc[Move History Encoder LSTM] --> Context[Context Vector]
-        
-        FromEmbed --> ScoreMatrix["Score Matrix (64x64) Dot Product"]
-        ToEmbed --> ScoreMatrix
-        Context --> ScoreMatrix
-        
-        ScoreMatrix --> Criticality[Criticality Score Branch MLP]
-        ScoreMatrix --> Masking[Masking & Softmax]
+        Conv["Initial Conv2D (256 filters)"] --> ResBlocks
+        ResBlocks["19x Residual Blocks"] --> PolicyHead
+        ResBlocks --> ValueHead
+
+        %% Policy Head
+        PolicyHead["Policy Head"] --> PolicyConv["Conv2D (32)"]
+        PolicyConv --> PolicyBN["Batch Norm"]
+        PolicyBN --> PolicyReLU["ReLU"]
+        PolicyReLU --> PolicyDense["Dense (4096)"]
+        PolicyDense --> PolicyOut["Move Probabilities"]
+
+        %% Value Head
+        ValueHead["Value Head"] --> ValueConv["Conv2D (32)"]
+        ValueConv --> ValueBN["Batch Norm"]
+        ValueBN --> ValueReLU["ReLU"]
+        ValueReLU --> ValueDense1["Dense (256)"]
+        ValueDense1 --> ValueDense2["Dense (1)"]
+        ValueDense2 --> ValueOut["Position Value"]
     end
 
-    %% Ares Interaction
-    Criticality -- Critical Moves\n(Score > 0.7)--> Ares[Ares Search Module]
-    Ares -->|Refined Scores| Adjust[Probability Adjustment]
-    Masking --> Adjust
+    %% MCTS Search
+    subgraph MCTS[Monte Carlo Tree Search]
+        direction TB
+        Root["Root Node"] --> Selection["Selection (PUCT)"]
+        Selection --> Expansion["Expansion"]
+        Expansion --> Simulation["Network Evaluation"]
+        Simulation --> Backprop["Backpropagation"]
+        Backprop -->|Update Stats| Selection
+    end
 
-    %% Output
-    Adjust --> MoveSel[Move Selection]
-    Adjust --> Promotion[Promotion Handler Queen/Knight/Rook/Bishop]
-    MoveSel --> FinalMove[Final Move Choice]
+    %% Network-MCTS Interaction
+    PolicyOut -->|Prior Probabilities P s,a| MCTS
+    ValueOut -->|Position Value V s| MCTS
+    MCTS -->|Visit Counts N s,a| MoveSel[Move Selection]
 
-    %% Training
-    PGN[PGN Database] -->|Supervised| SL[Supervised Learning Cross-Entropy]
-    Stockfish[Stockfish Engine] -->|Rewards| RL[Reinforcement Learning Policy Gradients]
-    SL --> Athena
-    RL --> Athena
+    %% Training Flow
+    SelfPlay["Self Play"] -->|Game States| Network
+    SelfPlay -->|State, MCTS Policy, Outcome| Training["Training Loop"]
+    Training -->|Update Weights| Network
 
-    %% System Context
-    Zeus[Zeus Orchestrator] -->|Game State| Athena
-    Athena -->|Move Proposal| Zeus
-    Ares <--> Zeus
+    %% System Integration
+    Zeus[Zeus Orchestrator] -->|Game State| Network
+    MoveSel -->|Best Move| Zeus
     
-    style Athena fill:#2c3e50,stroke:#3498db
-    style Ares fill:#34495e,stroke:#e74c3c
-    style Zeus fill:#27ae60,stroke:#2ecc71x
+    style Network fill:#2c3e50,stroke:#3498db
+    style MCTS fill:#34495e,stroke:#e74c3c
+    style Zeus fill:#27ae60,stroke:#2ecc71
+    style SelfPlay fill:#8e44ad,stroke:#9b59b6
+    style Training fill:#c0392b,stroke:#e74c3c

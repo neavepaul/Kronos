@@ -2,7 +2,7 @@ venv/
 __pycache__/
 *.pyc
 scratch.txt
-pgn_files/
+data/
 stockfish/
 archive/
 training_data
@@ -12,3 +12,4 @@ tuning
 wandb
 logs
 replay_bufffer.h5
+training_log.txt
