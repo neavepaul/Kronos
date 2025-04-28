@@ -13,6 +13,7 @@ sys.path.append(str(ROOT_PATH))
 
 from modules.athena.src.alpha_net import AlphaNet
 from modules.athena.src.hybrid_trainer import HybridTrainer
+from modules.athena.src.evaluate import evaluate_model
 
 MODELS_DIR = Path(__file__).resolve().parents[3] / 'models' / 'athena'
 STOCKFISH_PATH = ROOT_PATH / "modules/shared/stockfish/stockfish-windows-x86-64-avx2.exe"
@@ -52,9 +53,9 @@ class Trainer:
                     for key, value in metrics['stockfish'].items():
                         print(f"  {key}: {value}")
 
-                save_path = MODELS_DIR / f"athena_hybrid_iter_{iteration}_{timestamp}.weights.h5"
-                self.network.alpha_model.save_weights(str(save_path))
-                print(f"Saved model checkpoint: {save_path.name}")
+                # save_path = MODELS_DIR / f"athena_hybrid_iter_{iteration}_{timestamp}.weights.h5"
+                # self.network.alpha_model.save_weights(str(save_path))
+                # print(f"Saved model checkpoint: {save_path.name}")
 
                 if 'elo_estimate' in metrics['stockfish']:
                     current_elo = metrics['stockfish']['elo_estimate']
@@ -66,7 +67,6 @@ class Trainer:
 
             print("\n🎯 Training finished. Evaluating final model against Stockfish...")
 
-            from modules.athena.src.evaluate import evaluate_model
             final_elo = evaluate_model(self.network)
             print(f"\n🏆 Final Model Estimated ELO: {final_elo}")
 
@@ -88,7 +88,7 @@ class Trainer:
 def main():
     trainer = Trainer()
     trainer.train(
-        num_iterations=50,
+        num_iterations=1,
         initial_elo=0
     )
 

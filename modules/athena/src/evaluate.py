@@ -12,27 +12,19 @@ class EloEvaluator:
     def __init__(self, stockfish_path: Optional[str] = None):
         if stockfish_path is None:
             stockfish_path = str(Path(__file__).parent.parent.parent / 'shared' / 'stockfish' / 'stockfish-windows-x86-64-avx2.exe')
-            
-        self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
-        # Configure different Stockfish skill levels for ELO estimation
-        self.elo_levels = {
-            0: {'Skill Level': 0, 'ELO': 1100},
-            5: {'Skill Level': 5, 'ELO': 1500},
-            10: {'Skill Level': 10, 'ELO': 1800},
-            15: {'Skill Level': 15, 'ELO': 2100},
-            20: {'Skill Level': 20, 'ELO': 2400}
-        }
         
-    def play_match(self, athena, skill_level: int, num_games: int = 10) -> Dict:
+        self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
+        self.skill_levels = [0, 5, 10, 15, 20]  # Stockfish skill levels to test
+
+    def play_match(self, athena, skill_level: int, num_games: int = 20) -> Dict:
         """Play a match against Stockfish at given skill level."""
         self.engine.configure({'Skill Level': skill_level})
         wins = draws = losses = 0
-        
+
         for game_id in range(num_games):
             board = chess.Board()
-            # Alternate colors
-            athena_white = game_id % 2 == 0
-            
+            athena_white = game_id % 2 == 0  # Alternate colors
+
             while not board.is_game_over():
                 if board.turn == chess.WHITE:
                     if athena_white:
@@ -47,7 +39,7 @@ class EloEvaluator:
                         move_probs, _ = athena.predict(board)
                         move = max(move_probs, key=move_probs.get)
                 board.push(move)
-            
+
             result = board.result()
             if result == '1-0':
                 wins += 1 if athena_white else 0
@@ -57,71 +49,67 @@ class EloEvaluator:
                 losses += 1 if athena_white else 0
             else:
                 draws += 1
-                
+
         return {
             'wins': wins,
             'draws': draws,
             'losses': losses,
             'score': (wins + 0.5 * draws) / num_games
         }
-    
+
     def estimate_elo(self, athena) -> float:
-        """Estimate ELO rating through matches against different Stockfish levels."""
+        """Estimate ELO rating through matches against multiple Stockfish levels."""
         logger.info("Starting ELO estimation")
-        results = {}
-        
-        # Start with middle level
-        current_level = 10
-        score = self.play_match(athena, current_level)['score']
-        
-        if score > 0.6:  # Doing well, try higher levels
-            levels_to_test = [15, 20]
-        elif score < 0.4:  # Struggling, try lower levels
-            levels_to_test = [5, 0]
-        else:  # Roughly equal, test adjacent levels
-            levels_to_test = [5, 15]
-            
-        results[current_level] = score
-        
-        # Test selected levels
-        for level in levels_to_test:
-            results[level] = self.play_match(athena, level)['score']
-            
-        # Estimate ELO through interpolation
-        elo_estimate = self._interpolate_elo(results)
-        logger.info(f"Estimated ELO: {elo_estimate}")
-        
-        return elo_estimate
-    
-    def _interpolate_elo(self, results: Dict[int, float]) -> float:
-        """Interpolate ELO rating from match results."""
-        # Find closest skill levels
-        scores = [(level, score) for level, score in results.items()]
-        scores.sort(key=lambda x: x[1], reverse=True)
-        
-        if len(scores) == 1:
-            return self.elo_levels[scores[0][0]]['ELO']
-            
-        # Linear interpolation between closest levels
-        for i in range(len(scores) - 1):
-            level1, score1 = scores[i]
-            level2, score2 = scores[i + 1]
-            
-            if score1 >= 0.5 >= score2:
-                elo1 = self.elo_levels[level1]['ELO']
-                elo2 = self.elo_levels[level2]['ELO']
-                # Interpolate based on score difference
-                ratio = (0.5 - score2) / (score1 - score2)
-                return elo2 + ratio * (elo1 - elo2)
-        
-        # If no interpolation possible, return closest match
-        return self.elo_levels[scores[0][0]]['ELO']
-    
+        scores = {}
+
+        for level in self.skill_levels:
+            result = self.play_match(athena, level)
+            scores[level] = result['score']
+            logger.info(f"Skill {level}: {result}")
+
+        # Calculate ELO against each Stockfish level
+        elos = []
+        for level, score in scores.items():
+            stockfish_elo = self._stockfish_level_to_elo(level)
+            estimated_elo = stockfish_elo + 400 * (score - 0.5)
+            elos.append(estimated_elo)
+
+        # Average the results
+        final_elo = np.mean(elos)
+        logger.info(f"Estimated ELO: {final_elo:.2f}")
+
+        return final_elo
+
+    def _stockfish_level_to_elo(self, level: int) -> int:
+        """Roughly map Stockfish skill level to estimated ELO."""
+        mapping = {
+            0: 1000,
+            5: 1400,
+            10: 1800,
+            15: 2200,
+            20: 2500
+        }
+        return mapping.get(level, 1800)
+
     def __del__(self):
         if hasattr(self, 'engine'):
             self.engine.quit()
+
 
 def evaluate_model(athena) -> float:
     """Evaluate a model and return its estimated ELO rating."""
     evaluator = EloEvaluator()
     return evaluator.estimate_elo(athena)
+
+def quick_evaluate_model(athena) -> float:
+    """Quick ELO evaluation (lightweight for training)."""
+    from modules.athena.src.evaluate import EloEvaluator
+    evaluator = EloEvaluator()
+    
+    evaluator.skill_levels = [10]  # Only Stockfish skill 10
+    result = evaluator.play_match(athena, skill_level=10, num_games=6)  # 6 games only
+    
+    stockfish_elo = evaluator._stockfish_level_to_elo(10)
+    estimated_elo = stockfish_elo + 400 * (result['score'] - 0.5)
+    
+    return estimated_elo

@@ -51,7 +51,7 @@ class MCTSNode:
         return best_action, best_child
 
 class MCTS:
-    def __init__(self, network, num_simulations: int = 5, c_puct: float = 1.0):
+    def __init__(self, network, num_simulations: int = 25, c_puct: float = 1.0):
         logger.info(f"Initializing MCTS with {num_simulations} simulations, c_puct={c_puct}")
         self.network = network  # Neural network (Athena)
         self.num_simulations = num_simulations

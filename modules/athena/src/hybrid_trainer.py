@@ -1,10 +1,15 @@
+import os, sys
 import chess
 import numpy as np
 import logging
+import random
 from typing import Dict, Any, Tuple
 from pathlib import Path
 from tqdm import tqdm
 
+# Dynamically set the root path to the "Kronos" directory
+ROOT_PATH = Path(__file__).resolve().parents[3]
+sys.path.append(str(ROOT_PATH))
 from modules.athena.src.selfplay import SelfPlayTrainer
 from modules.athena.src.stockfish_trainer import StockfishTrainer
 
@@ -12,112 +17,96 @@ logger = logging.getLogger('athena.hybrid_trainer')
 
 class HybridTrainer:
     def __init__(self, athena, stockfish_path: str = None):
-        """Initialize hybrid trainer with both self-play and Stockfish components."""
         logger.info("Initializing HybridTrainer")
         self.athena = athena
         self.self_play_trainer = SelfPlayTrainer(athena)
         self.stockfish_trainer = StockfishTrainer(athena, stockfish_path)
-        self.current_elo = 0  # Track estimated ELO
-        
-    def train_iteration(self, iteration: int, run_evaluation: bool = False) -> Dict[str, Any]:
-        print(f"\n[HybridTrainer] Iteration {iteration} (ELO: {self.current_elo})")
-        phase, stockfish_ratio = self._get_training_phase()
-        print(f"[HybridTrainer] Phase: {phase} | Stockfish: {stockfish_ratio:.2f}")
+        self.current_iteration = 0
 
-        metrics = {'stockfish': {}, 'overall': {}}
+    def train_iteration(self, iteration: int, run_evaluation: bool = False) -> Dict[str, Any]:
+        logger.info(f"\n[HybridTrainer] Iteration {iteration}")
+        phase, stockfish_ratio = self._get_training_phase()
+        logger.info(f"[HybridTrainer] Phase: {phase} | Stockfish Ratio: {stockfish_ratio:.2f}")
+
+        metrics = {'stockfish': {}, 'selfplay': {}, 'overall': {}}
         total_positions = 0
 
-        # ONLY stockfish training
-        if stockfish_ratio > 0:
-            metrics['stockfish'] = self.stockfish_trainer.train_iteration(iteration, run_evaluation)
+        # Decide which training source for each batch
+        use_stockfish = random.random() < stockfish_ratio
 
-        metrics['overall'] = self._combine_metrics(metrics['stockfish'], {}, stockfish_ratio)
+        if use_stockfish:
+            metrics['stockfish'] = self.stockfish_trainer.train_iteration(iteration, run_evaluation)
+        else:
+            metrics['selfplay'] = self.self_play_trainer.train_iteration(iteration)
+
+        metrics['overall'] = self._combine_metrics(metrics['stockfish'], metrics['selfplay'], stockfish_ratio)
+
+        self._log_metrics(metrics)
+
+        self.current_iteration += 1
         return metrics
 
-
-
     def _get_training_phase(self) -> Tuple[str, float]:
-        """Determine current training phase and Stockfish ratio."""
-        if self.current_elo < 1800:
-            # Phase 1: Heavy Stockfish training initially
+        """Determine training phase and stockfish/selfplay ratio."""
+        if self.current_iteration < 50:
             phase = "initial"
-            stockfish_ratio = 1  # 100% Stockfish
-        elif 1800 <= self.current_elo < 2200:
-            # Phase 2: More balanced training
+            stockfish_ratio = 1.0  # 100% Stockfish
+        elif 50 <= self.current_iteration < 200:
             phase = "transition"
-            stockfish_ratio = 0.8  # 80% Stockfish, 20% self-play
+            stockfish_ratio = 0.7  # 70% Stockfish, 30% Self-Play
         else:
-            # Phase 3: Focus more on self-play for creative learning
             phase = "advanced"
-            stockfish_ratio = 0.45  # 45% Stockfish, 55% self-play
-        
+            stockfish_ratio = 0.4  # 40% Stockfish, 60% Self-Play
         return phase, stockfish_ratio
-    
+
     def _combine_metrics(
-        self, 
-        stockfish_metrics: Dict[str, float], 
+        self,
+        stockfish_metrics: Dict[str, float],
         selfplay_metrics: Dict[str, float],
         stockfish_ratio: float
     ) -> Dict[str, float]:
         """Combine metrics from both training sources."""
         combined = {}
-        
-        # Common metrics between both sources
-        common_metrics = set(stockfish_metrics.keys()) & set(selfplay_metrics.keys())
-        for metric in common_metrics:
-            # Weight the metrics based on the ratio
-            combined[metric] = (
-                stockfish_metrics[metric] * stockfish_ratio +
-                selfplay_metrics[metric] * (1 - stockfish_ratio)
-            )
-        
-        # Add unique metrics from each source
-        for metric, value in stockfish_metrics.items():
-            if metric not in combined:
-                combined[f'stockfish_{metric}'] = value
-                
-        for metric, value in selfplay_metrics.items():
-            if metric not in combined:
-                combined[f'selfplay_{metric}'] = value
-        
+
+        if stockfish_metrics and selfplay_metrics:
+            # Weighted average if both exist
+            for key in set(stockfish_metrics.keys()) & set(selfplay_metrics.keys()):
+                combined[key] = (
+                    stockfish_metrics[key] * stockfish_ratio +
+                    selfplay_metrics[key] * (1 - stockfish_ratio)
+                )
+        elif stockfish_metrics:
+            combined.update(stockfish_metrics)
+        elif selfplay_metrics:
+            combined.update(selfplay_metrics)
+
         return combined
-    
+
     def _log_metrics(self, metrics: Dict[str, Dict[str, float]]):
         """Log training metrics in a readable format."""
         logger.info("\nTraining Metrics Summary:")
-        
+
         if metrics['stockfish']:
             logger.info("\nStockfish Training:")
             for key, value in metrics['stockfish'].items():
-                if isinstance(value, float):
-                    logger.info(f"  {key}: {value:.4f}")
-                else:
-                    logger.info(f"  {key}: {value}")
-        
-        if metrics['self_play']:
-            logger.info("\nSelf-play Training:")
-            for key, value in metrics['self_play'].items():
-                if isinstance(value, float):
-                    logger.info(f"  {key}: {value:.4f}")
-                else:
-                    logger.info(f"  {key}: {value}")
-        
+                logger.info(f"  {key}: {value:.4f}")
+
+        if metrics['selfplay']:
+            logger.info("\nSelf-Play Training:")
+            for key, value in metrics['selfplay'].items():
+                logger.info(f"  {key}: {value:.4f}")
+
         logger.info("\nOverall Metrics:")
         for key, value in metrics['overall'].items():
-            if isinstance(value, float):
-                logger.info(f"  {key}: {value:.4f}")
-            else:
-                logger.info(f"  {key}: {value}")
-    
+            logger.info(f"  {key}: {value:.4f}")
+
     def update_elo(self, elo: float):
-        """Update current ELO estimate."""
-        self.current_elo = elo
-        logger.info(f"Updated ELO rating to {elo}")
-        
+        pass  # Deprecated for now, can rewire to real evaluation if needed
+
     def get_curriculum_config(self) -> Dict[str, Any]:
         """Get curriculum learning configuration based on current phase."""
         phase, _ = self._get_training_phase()
-        
+
         if phase == "initial":
             return {
                 'positions': 'simple',

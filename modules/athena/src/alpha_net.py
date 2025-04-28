@@ -89,8 +89,15 @@ class AlphaNet(keras.Model):
         )
         
         # Compile model with appropriate losses and metrics
+        initial_learning_rate = 0.001
+        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate,
+            decay_steps=10000,   # After 10k batches
+            decay_rate=0.9,      # Multiply LR by 0.9
+            staircase=True       # Decay in steps, not smoothly
+        )
         self.alpha_model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=0.001),
+            optimizer=keras.optimizers.Adam(learning_rate=lr_schedule),
             loss={
                 'policy': 'categorical_crossentropy',
                 'value': 'mean_squared_error'

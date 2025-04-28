@@ -13,10 +13,10 @@ from tqdm import tqdm
 ROOT_PATH = Path(__file__).resolve().parents[3]  # Moves up to "Kronos/"
 sys.path.append(str(ROOT_PATH))
 from modules.athena.src.utils import fen_to_tensor, encode_move_sequence, get_attack_defense_maps
-from modules.athena.src.evaluate import evaluate_model
+from modules.athena.src.evaluate import quick_evaluate_model
 
 class StockfishTrainer:
-    def __init__(self, athena, stockfish_path: Optional[str] = None, depth: int = 6):
+    def __init__(self, athena, stockfish_path: Optional[str] = None, depth: int = 15):
         if stockfish_path is None:
             stockfish_path = str(Path(__file__).parent.parent.parent / 'shared' / 'stockfish' / 'stockfish-windows-x86-64-avx2.exe')
         
@@ -25,7 +25,7 @@ class StockfishTrainer:
         self.engine.configure({'Threads': 4, 'Hash': 512, 'Skill Level': 20})
         self.depth = depth
         print(f"[StockfishTrainer] Initialized Stockfish at {stockfish_path}")
-        self.batch_size = 64
+        self.batch_size = 128
         self.num_games = 5
         self.evaluation_games = 1
         self.max_game_length = 150
@@ -61,7 +61,7 @@ class StockfishTrainer:
         games = total_metrics['games_processed']
         metrics_avg = {k: total_metrics[k] / games for k in ['policy_loss','value_loss','total_loss','avg_game_length']}
 
-        elo_estimate = evaluate_model(self.athena) if run_evaluation else 0.0
+        elo_estimate = quick_evaluate_model(self.athena) if run_evaluation else 0.0
 
         return {**metrics_avg, 'elo_estimate': elo_estimate}
 
