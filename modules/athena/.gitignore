@@ -13,3 +13,5 @@ wandb
 logs
 replay_bufffer.h5
 training_log.txt
+mistakes_report.json
+performance_graph.png

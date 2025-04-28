@@ -19,54 +19,33 @@ class HybridTrainer:
         self.stockfish_trainer = StockfishTrainer(athena, stockfish_path)
         self.current_elo = 0  # Track estimated ELO
         
-    def train_iteration(self, iteration: int) -> Dict[str, Any]:
-        """Run one iteration of hybrid training."""
-        logger.info(f"\nStarting hybrid training iteration {iteration}")
-        
-        # Determine phase and ratios based on current ELO
+    def train_iteration(self, iteration: int, run_evaluation: bool = False) -> Dict[str, Any]:
+        print(f"\n[HybridTrainer] Iteration {iteration} (ELO: {self.current_elo})")
         phase, stockfish_ratio = self._get_training_phase()
-        logger.info(f"Current phase: {phase}, Stockfish ratio: {stockfish_ratio:.2f}")
-        
-        metrics = {'self_play': {}, 'stockfish': {}, 'overall': {}}
+        print(f"[HybridTrainer] Phase: {phase} | Stockfish: {stockfish_ratio:.2f}")
+
+        metrics = {'stockfish': {}, 'overall': {}}
         total_positions = 0
-        
-        # Stockfish training
+
+        # ONLY stockfish training
         if stockfish_ratio > 0:
-            logger.info(f"Running Stockfish training ({stockfish_ratio*100:.1f}% of positions)")
-            stockfish_metrics = self.stockfish_trainer.train_iteration(iteration)
-            metrics['stockfish'] = stockfish_metrics
-            if 'game_positions' in stockfish_metrics:
-                total_positions += stockfish_metrics['game_positions']
-        
-        # Self-play training
-        if stockfish_ratio < 1:
-            logger.info(f"Running self-play training ({(1-stockfish_ratio)*100:.1f}% of positions)")
-            self_play_metrics = self.self_play_trainer.train_iteration(iteration)
-            metrics['self_play'] = self_play_metrics
-            if 'game_positions' in self_play_metrics:
-                total_positions += self_play_metrics['game_positions']
-        
-        # Calculate overall metrics
-        metrics['overall'] = self._combine_metrics(
-            metrics['stockfish'], 
-            metrics['self_play'],
-            stockfish_ratio
-        )
-        metrics['overall']['total_positions'] = total_positions
-        
-        self._log_metrics(metrics)
+            metrics['stockfish'] = self.stockfish_trainer.train_iteration(iteration, run_evaluation)
+
+        metrics['overall'] = self._combine_metrics(metrics['stockfish'], {}, stockfish_ratio)
         return metrics
-    
+
+
+
     def _get_training_phase(self) -> Tuple[str, float]:
         """Determine current training phase and Stockfish ratio."""
         if self.current_elo < 1800:
             # Phase 1: Heavy Stockfish training initially
             phase = "initial"
-            stockfish_ratio = 0.85  # 85% Stockfish, 15% self-play
+            stockfish_ratio = 1  # 100% Stockfish
         elif 1800 <= self.current_elo < 2200:
             # Phase 2: More balanced training
             phase = "transition"
-            stockfish_ratio = 0.65  # 65% Stockfish, 35% self-play
+            stockfish_ratio = 0.8  # 80% Stockfish, 20% self-play
         else:
             # Phase 3: Focus more on self-play for creative learning
             phase = "advanced"

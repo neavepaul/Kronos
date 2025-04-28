@@ -21,33 +21,26 @@ class SelfPlayTrainer:
         self.game_memory = deque(maxlen=buffer_size)
         self.batch_size = 256
         self.num_epochs = 1
-        self.games_per_iteration = 1
-        
+        self.games_per_iteration = 5  # 🔥 Now 5 games per iteration
+
     def train_iteration(self, iteration: int) -> Dict[str, Any]:
-        """Run one iteration of self-play training."""
-        logger.info(f"Starting self-play iteration {iteration}")
-        
-        # Generate games through self-play
+        logger.info(f"[SelfPlayTrainer] Starting self-play iteration {iteration}")
         games_data = []
-        pbar = tqdm(total=self.games_per_iteration, desc="Playing games")
-        
+        pbar = tqdm(total=self.games_per_iteration, desc="[Self-Play] Games")
+
         for game_id in range(self.games_per_iteration):
+            print(f"[Self-Play] Playing Game {game_id+1}/{self.games_per_iteration}")
             game_states = self._play_game()
             if game_states:
                 games_data.extend(game_states)
                 pbar.update(1)
-                pbar.set_postfix({'positions': len(game_states)})
         
         pbar.close()
         
-        # Add new games to memory
         self.game_memory.extend(games_data)
-        logger.info(f"Memory buffer size: {len(self.game_memory)}")
+        logger.info(f"[SelfPlayTrainer] Memory buffer size: {len(self.game_memory)}")
         
-        # Train on sampled positions
         metrics = self._train_on_memory()
-        
-        # Add some additional metrics
         metrics['game_positions'] = len(games_data)
         metrics['buffer_size'] = len(self.game_memory)
         
