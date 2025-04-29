@@ -22,13 +22,13 @@ class StockfishTrainer:
         
         self.athena = athena
         self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
-        self.engine.configure({'Threads': 4, 'Hash': 512, 'Skill Level': 20})
+        self.engine.configure({'Threads': 4, 'Hash': 1024, 'Skill Level': 20})
         self.depth = depth
         print(f"[StockfishTrainer] Initialized Stockfish at {stockfish_path}")
-        self.batch_size = 128
-        self.num_games = 5
-        self.evaluation_games = 1
-        self.max_game_length = 150
+        self.batch_size = 256
+        self.num_games = 10
+        self.evaluation_games = 6
+        self.max_game_length = 160
         self.tablebase_piece_count = 7
         self.endgame_piece_count = 12
         

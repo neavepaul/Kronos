@@ -17,13 +17,13 @@ from modules.ares.logic.mcts import MCTS
 logger = logging.getLogger('athena.selfplay')
 
 class SelfPlayTrainer:
-    def __init__(self, athena, buffer_size=500000):
+    def __init__(self, athena, buffer_size=800_000):
         self.athena = athena
         self.game_memory = deque(maxlen=buffer_size)
         self.batch_size = 512
-        self.num_epochs = 1
-        self.games_per_iteration = 10
-        self.num_simulations = 25  # MCTS simulations
+        self.num_epochs = 2
+        self.games_per_iteration = 15
+        self.num_simulations = 50  # MCTS simulations
 
     def train_iteration(self, iteration: int) -> Dict[str, Any]:
         logger.info(f"[SelfPlayTrainer] Starting self-play iteration {iteration}")
@@ -47,6 +47,18 @@ class SelfPlayTrainer:
         metrics['buffer_size'] = len(self.game_memory)
 
         return metrics
+    
+    @staticmethod
+    def _material_score(board: chess.Board) -> int:
+        piece_values = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3, chess.ROOK: 5, chess.QUEEN: 9}
+        score = 0
+        for piece_type in piece_values:
+            score += piece_values[piece_type] * (
+                len(board.pieces(piece_type, chess.WHITE)) - len(board.pieces(piece_type, chess.BLACK))
+            )
+        return score
+
+
 
     def _play_game(self) -> List[Dict]:
         try:
@@ -58,6 +70,10 @@ class SelfPlayTrainer:
             mcts = MCTS(network=self.athena, num_simulations=self.num_simulations)
 
             while not board.is_game_over() and move_count < max_moves:
+                if move_count >= max_moves:
+                    result = 0  # declare draw
+                    break
+                
                 # Run MCTS
                 move_probs = mcts.run(board)
 
@@ -83,7 +99,8 @@ class SelfPlayTrainer:
                 })
 
                 # Move selection (temperature)
-                temperature = 1.0 if move_count < 30 else 0.5
+                # temperature = 1.0 if move_count < 30 else 0.5
+                temperature = max(0.1, 1.0 - (move_count / 100)) 
                 moves, probs = zip(*move_probs.items())
                 probs = np.array(probs)
 
@@ -106,7 +123,9 @@ class SelfPlayTrainer:
                 result = 0
 
             for state in game_states:
-                state['value'] = result if state['turn'] else -result
+                material_advantage = self._material_score(board)
+                shaped_value = result if board.is_game_over() else material_advantage / 30.0  # normalize
+                state['value'] = shaped_value if state['turn'] else -shaped_value
 
             return game_states
 
@@ -124,7 +143,12 @@ class SelfPlayTrainer:
 
         try:
             for epoch in range(self.num_epochs):
-                indices = np.random.choice(len(self.game_memory), size=self.batch_size, replace=False)
+                # indices = np.random.choice(len(self.game_memory), size=self.batch_size, replace=False)
+                priority_weights = np.array([abs(sample['value']) for sample in self.game_memory])  # extreme outcomes = high priority
+                priority_weights += 1e-3  # avoid zero
+                priority_weights /= priority_weights.sum()
+                indices = np.random.choice(len(self.game_memory), size=self.batch_size, replace=False, p=priority_weights)
+
 
                 states = []
                 policies = []

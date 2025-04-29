@@ -7,7 +7,7 @@ graph TD
     DefenseMap["Defense Map (8x8)"] --> Network
 
     %% Neural Network Architecture
-    subgraph Network[AlphaNet Neural Network]
+    subgraph Network[AegisNet Neural Network]
         direction TB
         Conv["Initial Conv2D (256 filters)"] --> ResBlocks
         ResBlocks["19x Residual Blocks"] --> PolicyHead

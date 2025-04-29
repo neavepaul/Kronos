@@ -1,7 +1,6 @@
 import chess
 import chess.engine
 import logging
-import random
 import numpy as np
 from pathlib import Path
 from typing import Optional, List, Dict
@@ -12,11 +11,11 @@ class EloEvaluator:
     def __init__(self, stockfish_path: Optional[str] = None):
         if stockfish_path is None:
             stockfish_path = str(Path(__file__).parent.parent.parent / 'shared' / 'stockfish' / 'stockfish-windows-x86-64-avx2.exe')
-        
-        self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
-        self.skill_levels = [0, 5, 10, 15, 20]  # Stockfish skill levels to test
 
-    def play_match(self, athena, skill_level: int, num_games: int = 20) -> Dict:
+        self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
+        self.skill_levels = [5, 7, 9, 11, 13, 15]  # Fine-grained ELO test levels
+
+    def play_match(self, athena, skill_level: int, num_games: int = 12) -> Dict:
         """Play a match against Stockfish at given skill level."""
         self.engine.configure({'Skill Level': skill_level})
         wins = draws = losses = 0
@@ -74,22 +73,20 @@ class EloEvaluator:
             estimated_elo = stockfish_elo + 400 * (score - 0.5)
             elos.append(estimated_elo)
 
-        # Average the results
         final_elo = np.mean(elos)
         logger.info(f"Estimated ELO: {final_elo:.2f}")
 
         return final_elo
 
     def _stockfish_level_to_elo(self, level: int) -> int:
-        """Roughly map Stockfish skill level to estimated ELO."""
-        mapping = {
-            0: 1000,
-            5: 1400,
-            10: 1800,
-            15: 2200,
-            20: 2500
+        """Reddit-based realistic ELO mapping for Stockfish skill levels."""
+        refined_mapping = {
+            1: 1385, 2: 1460, 3: 1540, 4: 1620, 5: 1700,
+            6: 1780, 7: 1860, 8: 1940, 9: 2020, 10: 2100,
+            11: 2180, 12: 2260, 13: 2340, 14: 2420, 15: 2500,
+            16: 2580, 17: 2660, 18: 2740, 19: 2820, 20: 2900
         }
-        return mapping.get(level, 1800)
+        return refined_mapping.get(level, 2100)
 
     def __del__(self):
         if hasattr(self, 'engine'):
@@ -101,15 +98,12 @@ def evaluate_model(athena) -> float:
     evaluator = EloEvaluator()
     return evaluator.estimate_elo(athena)
 
+
 def quick_evaluate_model(athena) -> float:
     """Quick ELO evaluation (lightweight for training)."""
-    from modules.athena.src.evaluate import EloEvaluator
     evaluator = EloEvaluator()
-    
-    evaluator.skill_levels = [10]  # Only Stockfish skill 10
-    result = evaluator.play_match(athena, skill_level=10, num_games=6)  # 6 games only
-    
+    evaluator.skill_levels = [10]
+    result = evaluator.play_match(athena, skill_level=10, num_games=6)
     stockfish_elo = evaluator._stockfish_level_to_elo(10)
     estimated_elo = stockfish_elo + 400 * (result['score'] - 0.5)
-    
     return estimated_elo

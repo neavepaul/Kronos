@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT_PATH = Path(__file__).resolve().parents[3]
 sys.path.append(str(ROOT_PATH))
 
-from modules.athena.src.alpha_net import AlphaNet
+from modules.athena.src.aegis_net import AegisNet
 from modules.athena.src.hybrid_trainer import HybridTrainer
 from modules.athena.src.evaluate import evaluate_model
 
@@ -20,7 +20,7 @@ STOCKFISH_PATH = ROOT_PATH / "modules/shared/stockfish/stockfish-windows-x86-64-
 
 class Trainer:
     def __init__(self):
-        self.network = AlphaNet()
+        self.network = AegisNet()
         self.hybrid_trainer = HybridTrainer(self.network, str(STOCKFISH_PATH))
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -88,7 +88,7 @@ class Trainer:
 def main():
     trainer = Trainer()
     trainer.train(
-        num_iterations=1,
+        num_iterations=100,
         initial_elo=0
     )
 

@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT_PATH = Path(__file__).resolve().parents[3]
 sys.path.append(str(ROOT_PATH))
 # Import your model
-from modules.athena.src.alpha_net import AlphaNet
+from modules.athena.src.aegis_net import AegisNet
 from modules.athena.src.utils import fen_to_tensor, encode_move_sequence, get_attack_defense_maps
 
 # --- Config ---
@@ -27,7 +27,7 @@ GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 
 # Initialize model
-model = AlphaNet()
+model = AegisNet()
 model.alpha_model.load_weights(MODEL_PATH)
 
 # Load images

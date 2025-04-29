@@ -6,16 +6,16 @@ from typing import Dict, Tuple
 import logging
 
 # Configure logging
-logger = logging.getLogger('athena.alpha_net')
+logger = logging.getLogger('athena.aegis_net')
 
 # Add MCTS import
 from modules.ares.logic.mcts import MCTS
 
-class AlphaNet(keras.Model):
+class AegisNet(keras.Model):
     """AlphaZero-style neural network with policy and value heads."""
     
     def __init__(self, num_filters: int = 256, num_blocks: int = 19):
-        logger.info(f"Initializing AlphaNet with {num_filters} filters and {num_blocks} residual blocks")
+        logger.info(f"Initializing AegisNet with {num_filters} filters and {num_blocks} residual blocks")
         super().__init__()
         
         # Initialize MCTS

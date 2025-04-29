@@ -12,7 +12,7 @@ from modules.athena.src.utils import (
     encode_move,
     decode_move
 )
-from modules.athena.src.alpha_net import AlphaNet
+from modules.athena.src.aegis_net import AegisNet
 from modules.ares.logic.mcts import MCTS
 
 class Athena:
