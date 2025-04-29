@@ -1,83 +1,99 @@
-# Kronos: Distributed Chess Engine
+# ♟️ Kronos: Distributed Neural Chess Engine
 
-Welcome to **Kronos**, a modular and distributed chess engine designed to push the boundaries of resource-efficient chess computation. Built on a cluster of Raspberry Pis, Kronos utilizes parallelism, precomputed data, and innovative algorithms to provide strong chess-playing capabilities. This project is not just a chess engine but a platform to explore creative and resource-aware approaches to artificial intelligence.
+**Kronos** is a modular, distributed chess engine built for experimentation in neural search, reinforcement learning, and resource-efficient AI.  
+Designed to run across a Raspberry Pi cluster, Kronos splits chess intelligence into specialized "god modules," each mastering a phase of the game.
 
-## **Table of Contents**
-
--   [Introduction](#introduction)
--   [Architecture Overview](#architecture-overview)
--   [Modules and Roles](#modules-and-roles)
-<!-- -   [Current Features](#current-features)
--   [Future Roadmap](#future-roadmap)
--   [Contributing](#contributing)
--   [License](#license) -->
--   [TODO](#todo)
+> Inspired by mythology — coordinated by Zeus, powered by Apollo, Athena, Ares, and Hades.
 
 ---
 
-## **Introduction**
+## 🏛️ System Architecture
 
-Kronos, named after the Titan who consumed the gods, symbolizes its ability to encompass and integrate the specialized "god modules" of the chess engine. Designed to run on a cluster of Raspberry Pi 4Bs, Kronos leverages modularity and distributed computation to balance performance and resource constraints.
+| Module | Role | Description |
+|:---|:---|:---|
+| ⚡ **Zeus** | Orchestrator | Manages game state, coordinates module outputs, and selects final moves. |
+| 📘 **Apollo** | Opening Book Module | Provides opening moves using a merged Polyglot book and move history analysis. |
+| 🧠 **Athena** | Neural Evaluation Module | Predicts best moves using AegisNet, a deep Residual CNN trained via supervised learning and self-play. |
+| 🌲 **Ares** | Monte Carlo Tree Search (MCTS) Module | Executes deep search when Athena signals criticality, using AegisNet evaluations at leaf nodes. |
+| 🧊 **Hades** | Endgame Tablebase Module | Ensures perfect play with Syzygy 3-4-5 WDL/DTZ probing for positions with ≤7 pieces. |
 
-The engine combines traditional chess algorithms (e.g., Minimax, Alpha-Beta pruning) with modern innovations like lightweight neural networks and precomputed tablebases. Each Raspberry Pi in the cluster is assigned a specific role to handle different phases of the game, from openings to endgames.
-
----
-
-## **Architecture Overview**
-
-Kronos's design is inspired by microservices architecture, with each Raspberry Pi playing a specific role:
-
--   **Zeus (Orchestrator):** Manages communication between modules and combines results.
--   **Apollo (Opening Module):** Handles opening book queries and move history analysis.
--   **Athena (Evaluation Module):** Evaluates board positions using heuristics and lightweight neural networks.
--   **Ares (Search Module):** Performs search algorithms like Minimax and Alpha-Beta pruning.
--   **Hades (Tablebase Module):** Handles Syzygy tablebase probing for perfect endgame play.
-
-Communication between modules is facilitated by ZeroMQ, enabling parallel processing and seamless coordination.
+Modules communicate asynchronously via **ZeroMQ** for high scalability and low latency.
 
 ---
 
-## **Modules and Roles**
+## 🧠 Athena: Scalable Neural Chess Engine
 
-1. **Zeus (Orchestrator):**
+Athena serves as Kronos’s brain, following a **streamlined AlphaZero-style design**, but built around her own strategic weapon — **AegisNet**.
 
-    - **Role:** Central controller of Kronos.
-    - **Tasks:** Distributes tasks, combines results, and manages move generation. Maintains the complete game history for all modules to access.
+### 🚀 Core Components
 
-2. **Apollo (Opening Module):**
+- **AegisNet**  
+  - Deep Residual CNN with 19 blocks
+  - Dual heads:
+    - 🎯 Policy Head: predicts move probabilities
+    - 📈 Value Head: predicts game outcome (win/loss/draw)
+  - Input: `chess.Board` object (internally encoded into tensor with optional attack/defense maps)
 
-    - **Role:** Provides opening move recommendations from a precompiled tablebase.
-    - **Tasks:** Tracks move history during the opening phase and analyzes opponent strategies.
+- **Ares (MCTS Search)**  
+  - Monte Carlo Tree Search guided by AegisNet policy predictions
+  - PUCT-based move selection
+  - Focused search only when Athena detects critical positions
 
-3. **Athena (Evaluation Module):**
+- **Self-Play Trainer**  
+  - Athena plays against herself to generate new training data
+  - Records policy distributions and final outcomes for continual learning
 
-    - **Role:** Evaluates board positions.
-    - **Tasks:** Uses heuristics and lightweight neural networks to assess position strength, particularly during the midgame.
+- **Stockfish Trainer**  
+  - Early-phase training supervised by Stockfish
+  - Bootstraps Athena's initial policy and value understanding
 
-4. **Ares (Search Module):**
+- **Hybrid Trainer**  
+  - Curriculum-based phased training:
+    - Start: 100% Stockfish
+    - Transition: 70% Stockfish / 30% Self-Play
+    - Advanced: 40% Stockfish / 60% Self-Play
 
-    - **Role:** Calculates the best moves using search algorithms.
-    - **Tasks:** Implements Minimax and Alpha-Beta pruning, with adaptive depth for critical positions.
-
-5. **Hades (Tablebase Module):**
-
-    - **Role:** Ensures perfect play in the endgame phase.
-    - **Tasks:** Queries Syzygy tablebases to determine optimal moves.
+- **Evaluator (ELO Estimator)**  
+  - Benchmarks Athena by playing against Stockfish (skill levels 0–20)
+  - Estimates ELO based on match outcomes
 
 ---
 
-## **TODO**
+## 📦 Features
 
--   [x] Set up Zeus (Orchestrator) and game history tracking
--   [x] Combine opening books for Apollo
--   [x] Finalize Apollo's integration for opening book queries
--   [ ] Implement Athena (Evaluation Module)
--   [ ] Implement Ares (Search Module)
--   [x] Implement Hades (Tablebase Module)
--   [ ] Train and deploy lightweight neural network for Athena
--   [ ] Keep Athena CPU for then Upgrade her to ONNX for GPU
--   [ ] Quantisation FP16 and ONNX
--   [ ] Set up caching for frequent tablebase queries in Hades
--   [ ] Stockfish 17 ARMv8 Dot Product at Zeus
--   [ ] Integrate ZeroMQ communication
--   [ ] Develop unit tests for all modules
+- End-to-end self-play training loop
+- Modular architecture for easy experimentation
+- Real ELO benchmarking
+- Curriculum-driven training progression
+- Criticality-based MCTS rollouts
+- ONNX export and quantization ready
+- Pygame-based live game GUI
+
+---
+
+## 🎯 Current Roadmap
+
+- [x] Opening book integration (Apollo)
+- [x] Syzygy tablebase probing with cache (Hades)
+- [x] Zeus full game history and coordination
+- [x] Athena Stockfish bootstrapping phase
+- [x] MCTS integration between Athena and Ares
+- [x] Pygame GUI for playing against Athena
+- [ ] Full self-play reinforcement learning phase
+- [ ] Adaptive MCTS simulation budget (dynamic criticality scaling)
+- [ ] ONNX quantized model deployment for faster Pi inference
+- [ ] Move history PGN export from self-play games
+- [ ] Parallelize self-play and evaluation for faster training
+
+---
+
+## 👤 About
+
+Kronos is built on the belief that intelligence doesn't require massive silicon — only better ideas.  
+Designed to be lightweight, scalable, and efficient, Kronos brings strong, strategic chess play even to small systems and low-power devices.  
+It explores how far careful engineering and smart self-learning can go without depending on heavyweight infrastructure.  
+Chess remains the ultimate testbed for intelligence — and Kronos is a step toward making it accessible anywhere, on any machine.
+
+Crafted with precision and intent by [@neavepaul](https://github.com/neavepaul).
+
+---
