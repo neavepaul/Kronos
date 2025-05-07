@@ -12,6 +12,7 @@ ROOT_PATH = Path(__file__).resolve().parents[3]
 sys.path.append(str(ROOT_PATH))
 from modules.athena.src.selfplay import SelfPlayTrainer
 from modules.athena.src.stockfish_trainer import StockfishTrainer
+from modules.athena.src.dual_stockfish_trainer import StockfishDualTrainer
 
 logger = logging.getLogger('athena.hybrid_trainer')
 
@@ -21,6 +22,7 @@ class HybridTrainer:
         self.athena = athena
         self.self_play_trainer = SelfPlayTrainer(athena)
         self.stockfish_trainer = StockfishTrainer(athena, stockfish_path)
+        self.dual_stockfish_trainer = StockfishDualTrainer(athena, stockfish_path)
         self.current_iteration = 0
 
     def train_iteration(self, iteration: int, run_evaluation: bool = False) -> Dict[str, Any]:
@@ -29,29 +31,27 @@ class HybridTrainer:
         logger.info(f"[HybridTrainer] Phase: {phase} | Stockfish Ratio: {stockfish_ratio:.2f}")
 
         metrics = {'stockfish': {}, 'selfplay': {}, 'overall': {}}
-        total_positions = 0
 
-        # Decide which training source for each batch
-        use_stockfish = random.random() < stockfish_ratio
-
-        if use_stockfish:
-            metrics['stockfish'] = self.stockfish_trainer.train_iteration(iteration, run_evaluation)
+        if phase == "initial":
+            metrics['stockfish'] = self.dual_stockfish_trainer.train_from_stronger_stockfish()
         else:
-            metrics['selfplay'] = self.self_play_trainer.train_iteration(iteration)
+            use_stockfish = random.random() < stockfish_ratio
+            if use_stockfish:
+                metrics['stockfish'] = self.stockfish_trainer.train_iteration(iteration, run_evaluation)
+            else:
+                metrics['selfplay'] = self.self_play_trainer.train_iteration(iteration)
 
         metrics['overall'] = self._combine_metrics(metrics['stockfish'], metrics['selfplay'], stockfish_ratio)
-
         self._log_metrics(metrics)
-
         self.current_iteration += 1
         return metrics
 
     def _get_training_phase(self) -> Tuple[str, float]:
         """Determine training phase and stockfish/selfplay ratio."""
-        if self.current_iteration < 50:
+        if self.current_iteration < 100:
             phase = "initial"
-            stockfish_ratio = 1.0  # 100% Stockfish
-        elif 50 <= self.current_iteration < 200:
+            stockfish_ratio = 1.0  # 100% Dual Stockfish
+        elif 100 <= self.current_iteration < 200:
             phase = "transition"
             stockfish_ratio = 0.7  # 70% Stockfish, 30% Self-Play
         else:
@@ -69,7 +69,6 @@ class HybridTrainer:
         combined = {}
 
         if stockfish_metrics and selfplay_metrics:
-            # Weighted average if both exist
             for key in set(stockfish_metrics.keys()) & set(selfplay_metrics.keys()):
                 combined[key] = (
                     stockfish_metrics[key] * stockfish_ratio +

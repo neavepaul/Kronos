@@ -28,9 +28,13 @@ class Trainer:
         print("Starting Hybrid AlphaZero training...")
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        initial_save_path = MODELS_DIR / f"athena_hybrid_{timestamp}.weights.h5"
-        self.network.alpha_model.save_weights(str(initial_save_path))
-        print(f"Saved initial model: {initial_save_path.name}")
+
+        self.network.alpha_model.load_weights("models/athena_hybrid_stock50self2.weights.h5")
+        print("Loaded initial model weights")
+
+        # initial_save_path = MODELS_DIR / f"athena_hybrid_{timestamp}.weights.h5"
+        # self.network.alpha_model.save_weights(str(initial_save_path))
+        # print(f"Saved initial model: {initial_save_path.name}")
 
         self.hybrid_trainer.update_elo(initial_elo)
         current_elo = initial_elo
@@ -67,7 +71,8 @@ class Trainer:
 
             print("\n🎯 Training finished. Evaluating final model against Stockfish...")
 
-            final_elo = evaluate_model(self.network)
+            # final_elo = evaluate_model(self.network)
+            final_elo = 0                                               # Placeholder for actual evaluation function
             print(f"\n🏆 Final Model Estimated ELO: {final_elo}")
 
             final_save_path = MODELS_DIR / f"athena_hybrid_final_{timestamp}_elo_{int(final_elo)}.weights.h5"

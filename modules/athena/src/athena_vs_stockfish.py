@@ -14,7 +14,7 @@ sys.path.append(str(ROOT_PATH))
 from modules.athena.src.aegis_net import AegisNet
 from modules.athena.src.utils import fen_to_tensor, encode_move_sequence, get_attack_defense_maps
 
-MODEL_PATH = str(ROOT_PATH / "modules/athena/src/models/athena_hybrid_final_20250427_112111_elo_1800.weights.h5")
+MODEL_PATH = str(ROOT_PATH / "modules/athena/src/models/athena_hybrid_stock50self2.weights.h5")
 STOCKFISH_PATH = str(ROOT_PATH / "modules/shared/stockfish/stockfish-windows-x86-64-avx2.exe")
 
 model = AegisNet()

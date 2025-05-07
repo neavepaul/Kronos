@@ -22,7 +22,7 @@ class StockfishTrainer:
         
         self.athena = athena
         self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
-        self.engine.configure({'Threads': 4, 'Hash': 1024, 'Skill Level': 20})
+        self.engine.configure({'Threads': 4, 'Hash': 1024, 'Skill Level': 1})
         self.depth = depth
         print(f"[StockfishTrainer] Initialized Stockfish at {stockfish_path}")
         self.batch_size = 256
@@ -61,7 +61,8 @@ class StockfishTrainer:
         games = total_metrics['games_processed']
         metrics_avg = {k: total_metrics[k] / games for k in ['policy_loss','value_loss','total_loss','avg_game_length']}
 
-        elo_estimate = quick_evaluate_model(self.athena) if run_evaluation else 0.0
+        # elo_estimate = quick_evaluate_model(self.athena) if run_evaluation else 0.0
+        elo_estimate = 0.0                             # Placeholder for elo_estimate, as quick_evaluate_model is not defined in this context
 
         return {**metrics_avg, 'elo_estimate': elo_estimate}
 
