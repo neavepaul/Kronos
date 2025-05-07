@@ -25,11 +25,11 @@ class StockfishDualTrainer:
         self.engine_black.configure({'Skill Level': 1, 'Threads': 1, 'Hash': 256})
 
         self.batch_size = 256
-        self.num_games = 10
+        self.num_games = 15
         self.max_game_length = 160
 
     def train_from_stronger_stockfish(self) -> Dict[str, Any]:
-        print("\n[StockfishDualTrainer] Lv2 vs Lv1 Training Mode")
+        print("\n[StockfishDualTrainer] Lv2 vs Lv1 Training Mode (Soft Targets + Eval + Label Smoothing)")
         all_positions = []
 
         for game_id in range(self.num_games):
@@ -60,23 +60,45 @@ class StockfishDualTrainer:
                 break
 
             if board.turn == is_lv2_white:
-                # Evaluate the board using Stockfish for value
                 try:
-                    eval_info = engine.analyse(board, chess.engine.Limit(depth=10))
-                    cp_score = eval_info['score'].white().score(mate_score=10000)
+                    eval_info = engine.analyse(board, chess.engine.Limit(depth=10), multipv=5)
+                    cp_score = eval_info[0]['score'].white().score(mate_score=10000)
                     clamped = max(min(cp_score, 1000), -1000)
                     scaled_value = clamped / 1000.0
-                except Exception as e:
-                    print(f"[Eval Error] {e}, fallback to 0.0")
-                    scaled_value = 0.0
 
-                state = self._encode_state(board)
-                policy = self._encode_policy(move)
-                positions.append({
-                    'state': state,
-                    'policy': policy,
-                    'value': scaled_value
-                })
+                    soft_policy = np.zeros(4096, dtype=np.float32)
+                    scores = []
+                    moves = []
+                    for info in eval_info:
+                        move_i = info.get("pv", [])[0] if info.get("pv") else None
+                        score_i = info['score'].white().score(mate_score=10000)
+                        if move_i is not None and score_i is not None:
+                            moves.append(move_i)
+                            scores.append(score_i)
+
+                    # Normalize scores using stable softmax
+                    if moves and scores:
+                        scores_np = np.array(scores, dtype=np.float32)
+                        scaled = scores_np / 100.0
+                        scaled -= np.max(scaled)  # stability trick
+                        exp_scores = np.exp(scaled)
+                        probs = exp_scores / np.sum(exp_scores)
+
+                        for move_i, prob in zip(moves, probs):
+                            idx = move_i.from_square * 64 + move_i.to_square
+                            soft_policy[idx] = prob
+
+                        # Label smoothing
+                        soft_policy = 0.95 * soft_policy + 0.05 / 4096
+
+                        state = self._encode_state(board)
+                        positions.append({
+                            'state': state,
+                            'policy': soft_policy,
+                            'value': scaled_value
+                        })
+                except Exception as e:
+                    print(f"[Eval Error] {e}, skipping position")
 
             board.push(move)
 
@@ -89,11 +111,6 @@ class StockfishDualTrainer:
             'attack_map': get_attack_defense_maps(board)[0],
             'defense_map': get_attack_defense_maps(board)[1]
         }
-
-    def _encode_policy(self, move: chess.Move) -> np.ndarray:
-        policy = np.zeros(4096, dtype=np.float32)
-        policy[move.from_square * 64 + move.to_square] = 1.0
-        return policy
 
     def _train_on_positions(self, positions: List[Dict]) -> Dict[str, float]:
         boards, histories, attack_maps, defense_maps, policies, values = [], [], [], [], [], []
