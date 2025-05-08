@@ -21,15 +21,15 @@ class StockfishDualTrainer:
         self.engine_white = chess.engine.SimpleEngine.popen_uci(stockfish_path)
         self.engine_black = chess.engine.SimpleEngine.popen_uci(stockfish_path)
 
-        self.engine_white.configure({'Skill Level': 2, 'Threads': 1, 'Hash': 256})
-        self.engine_black.configure({'Skill Level': 1, 'Threads': 1, 'Hash': 256})
+        self.engine_white.configure({'Skill Level': 5, 'Threads': 1, 'Hash': 256})
+        self.engine_black.configure({'Skill Level': 0, 'Threads': 1, 'Hash': 256})
 
         self.batch_size = 256
         self.num_games = 20
         self.max_game_length = 160
 
     def train_from_stronger_stockfish(self) -> Dict[str, Any]:
-        print("\n[StockfishDualTrainer] Lv2 vs Lv1 Training Mode (Soft Targets + Eval + Label Smoothing + Top Weight)")
+        print("\n[StockfishDualTrainer] Lv5 vs Lv0 Training Mode (Soft Targets + Eval + Label Smoothing + Top Weight)")
         all_positions = []
 
         for game_id in range(self.num_games):
