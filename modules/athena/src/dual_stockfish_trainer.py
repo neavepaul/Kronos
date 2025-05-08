@@ -25,11 +25,11 @@ class StockfishDualTrainer:
         self.engine_black.configure({'Skill Level': 1, 'Threads': 1, 'Hash': 256})
 
         self.batch_size = 256
-        self.num_games = 15
+        self.num_games = 20
         self.max_game_length = 160
 
     def train_from_stronger_stockfish(self) -> Dict[str, Any]:
-        print("\n[StockfishDualTrainer] Lv2 vs Lv1 Training Mode (Soft Targets + Eval + Label Smoothing)")
+        print("\n[StockfishDualTrainer] Lv2 vs Lv1 Training Mode (Soft Targets + Eval + Label Smoothing + Top Weight)")
         all_positions = []
 
         for game_id in range(self.num_games):
@@ -63,8 +63,15 @@ class StockfishDualTrainer:
                 try:
                     eval_info = engine.analyse(board, chess.engine.Limit(depth=10), multipv=5)
                     cp_score = eval_info[0]['score'].white().score(mate_score=10000)
-                    clamped = max(min(cp_score, 1000), -1000)
-                    scaled_value = clamped / 1000.0
+                    # Scale Stockfish evaluation to [-1, +1] using tanh.
+                    # This smooths out extreme values (> ±400 centipawns), reduces gradient noise,
+                    # and helps the model focus on positional quality rather than exact score magnitude.
+                    scaled_value = np.tanh(cp_score / 400.0)
+
+                    # # Optional: skip low-signal positions
+                    # if abs(scaled_value) < 0.05:
+                    #     board.push(move)
+                    #     continue
 
                     soft_policy = np.zeros(4096, dtype=np.float32)
                     scores = []
@@ -79,7 +86,8 @@ class StockfishDualTrainer:
                     # Normalize scores using stable softmax
                     if moves and scores:
                         scores_np = np.array(scores, dtype=np.float32)
-                        scaled = scores_np / 100.0
+                        temp = 150.0
+                        scaled = scores_np / temp
                         scaled -= np.max(scaled)  # stability trick
                         exp_scores = np.exp(scaled)
                         probs = exp_scores / np.sum(exp_scores)
@@ -88,8 +96,14 @@ class StockfishDualTrainer:
                             idx = move_i.from_square * 64 + move_i.to_square
                             soft_policy[idx] = prob
 
-                        # Label smoothing
-                        soft_policy = 0.95 * soft_policy + 0.05 / 4096
+                        # Reinject weight into top move
+                        top_move_idx = moves[0].from_square * 64 + moves[0].to_square
+                        soft_policy[top_move_idx] += 0.1
+                        soft_policy /= np.sum(soft_policy)
+
+                        # Minimal label smoothing
+                        epsilon = 1e-5
+                        soft_policy = (1 - epsilon) * soft_policy + epsilon / 4096
 
                         state = self._encode_state(board)
                         positions.append({

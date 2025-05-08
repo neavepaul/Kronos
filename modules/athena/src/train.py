@@ -6,6 +6,9 @@ import tensorflow as tf
 from datetime import datetime
 from typing import Dict, Any
 from tqdm import tqdm
+from tensorflow import keras
+from tensorflow.keras.models import load_model
+
 
 from pathlib import Path
 ROOT_PATH = Path(__file__).resolve().parents[3]
@@ -19,9 +22,10 @@ MODELS_DIR = Path(__file__).resolve().parents[3] / 'models' / 'athena'
 STOCKFISH_PATH = ROOT_PATH / "modules/shared/stockfish/stockfish-windows-x86-64-avx2.exe"
 
 class Trainer:
-    def __init__(self):
+    def __init__(self, weight_path="models/athena_hybrid_stock50self2.weights.h5"):
         self.network = AegisNet()
         self.hybrid_trainer = HybridTrainer(self.network, str(STOCKFISH_PATH))
+        self.weight_path = weight_path
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
     def train(self, num_iterations=1, initial_elo=0):
@@ -29,12 +33,37 @@ class Trainer:
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        self.network.alpha_model.load_weights("models/athena_hybrid_stock50self2.weights.h5")
-        print("Loaded initial model weights")
+        # Compile the model BEFORE loading weights
+        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate=0.001,
+            decay_steps=10000,
+            decay_rate=0.9,
+            staircase=True
+        )
 
-        # initial_save_path = MODELS_DIR / f"athena_hybrid_{timestamp}.weights.h5"
-        # self.network.alpha_model.save_weights(str(initial_save_path))
-        # print(f"Saved initial model: {initial_save_path.name}")
+        self.network.alpha_model.compile(
+            optimizer=keras.optimizers.Adam(learning_rate=lr_schedule),
+            loss={
+                'policy': 'categorical_crossentropy',
+                'value': 'mean_squared_error'
+            },
+            loss_weights={
+                'policy': 1.0,
+                'value': 1.0
+            },
+            metrics={
+                'policy': ['accuracy'],
+                'value': ['mae']
+            }
+        )
+
+        # Uncomment this to resume training from a full saved model
+        # self.network.alpha_model = load_model("models/athena/full_athena_model_20240507_elo_1180")
+        # print("Loaded model from full save")
+
+        initial_save_path = MODELS_DIR / f"athena_hybrid_initial_{timestamp}.weights.h5"
+        self.network.alpha_model.save_weights(str(initial_save_path))
+        print(f"Saved initial model: {initial_save_path.name}")
 
         self.hybrid_trainer.update_elo(initial_elo)
         current_elo = initial_elo
@@ -75,14 +104,16 @@ class Trainer:
             final_elo = 0                                               # Placeholder for actual evaluation function
             print(f"\n🏆 Final Model Estimated ELO: {final_elo}")
 
-            final_save_path = MODELS_DIR / f"athena_hybrid_final_{timestamp}_elo_{int(final_elo)}.weights.h5"
-            self.network.alpha_model.save_weights(str(final_save_path))
+            final_save_path = MODELS_DIR / f"athena_hybrid_final_{timestamp}_elo_{int(final_elo)}"
+            # self.network.alpha_model.save_weights(str(final_save_path))
+            self.network.alpha_model.save(str(final_save_path))
             print(f"Saved Final Model: {final_save_path.name}")
 
         except KeyboardInterrupt:
             print("\nTraining interrupted. Saving final model...")
-            final_save_path = MODELS_DIR / f"athena_hybrid_final_interrupted_{timestamp}.weights.h5"
-            self.network.alpha_model.save_weights(str(final_save_path))
+            final_save_path = MODELS_DIR / f"athena_hybrid_final_interrupted_{timestamp}"
+            # self.network.alpha_model.save_weights(str(final_save_path))
+            self.network.alpha_model.save(str(final_save_path))
             print(f"Saved interrupted model: {final_save_path.name}")
 
         except Exception as e:
@@ -93,7 +124,7 @@ class Trainer:
 def main():
     trainer = Trainer()
     trainer.train(
-        num_iterations=100,
+        num_iterations=50,
         initial_elo=0
     )
 
