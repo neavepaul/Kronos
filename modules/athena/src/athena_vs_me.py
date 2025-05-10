@@ -3,6 +3,7 @@ import chess
 import sys
 import os
 import numpy as np
+from tensorflow.keras.models import load_model
 
 from pathlib import Path
 ROOT_PATH = Path(__file__).resolve().parents[3]
@@ -18,7 +19,7 @@ FPS = 60
 
 # Paths
 ASSETS_PATH = "assets/"
-MODEL_PATH = str(ROOT_PATH / "modules/athena/src/models/athena_hybrid_final_20250427_112111_elo_1800.weights.h5")
+MODEL_PATH = str(ROOT_PATH / "modules/athena/src/models/athena_hybrid_final_20250510_181337_prometheus-20-50_0.keras")
 
 # Colors
 WHITE = (240, 217, 181)
@@ -27,8 +28,11 @@ GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 
 # Initialize model
-model = AegisNet()
-model.alpha_model.load_weights(MODEL_PATH)
+# model = AegisNet()
+# model.alpha_model.load_weights(MODEL_PATH)
+
+
+model = load_model(MODEL_PATH)
 
 # Load images
 def load_piece_images():

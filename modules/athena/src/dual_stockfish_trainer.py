@@ -6,8 +6,8 @@ import numpy as np
 import random
 from typing import Dict, Any, Optional, List
 from tqdm import tqdm
+import tensorflow as tf
 
-# Dynamically set the root path to the "Kronos" directory
 ROOT_PATH = Path(__file__).resolve().parents[3]  # Up to "Kronos/"
 sys.path.append(str(ROOT_PATH))
 from modules.athena.src.utils import fen_to_tensor, encode_move_sequence, get_attack_defense_maps
@@ -24,12 +24,11 @@ class StockfishDualTrainer:
         self.engine_white.configure({'Skill Level': 5, 'Threads': 1, 'Hash': 256})
         self.engine_black.configure({'Skill Level': 0, 'Threads': 1, 'Hash': 256})
 
-        self.batch_size = 256
         self.num_games = 20
         self.max_game_length = 160
 
     def train_from_stronger_stockfish(self) -> Dict[str, Any]:
-        print("\n[StockfishDualTrainer] Lv5 vs Lv0 Training Mode (Soft Targets + Eval + Strong Top Weight Boost)")
+        print("\n[StockfishDualTrainer] Lv5 vs Lv0 Training Mode (PrometheusNet-Compatible)")
         all_positions = []
 
         for game_id in range(self.num_games):
@@ -39,7 +38,6 @@ class StockfishDualTrainer:
                 all_positions.extend(game_data)
 
         print(f"[StockfishDualTrainer] Total positions collected: {len(all_positions)}")
-
         metrics = self._train_on_positions(all_positions)
         metrics['games_processed'] = self.num_games
         return metrics
@@ -63,12 +61,12 @@ class StockfishDualTrainer:
                 try:
                     eval_info = engine.analyse(board, chess.engine.Limit(depth=10), multipv=5)
                     cp_score = eval_info[0]['score'].white().score(mate_score=10000)
-                    # Scale Stockfish evaluation to [-1, +1] using tanh.
                     scaled_value = np.tanh(cp_score / 400.0)
 
-                    soft_policy = np.zeros(4096, dtype=np.float32)
+                    soft_policy = np.zeros((64, 64), dtype=np.float32)
                     scores = []
                     moves = []
+
                     for info in eval_info:
                         move_i = info.get("pv", [])[0] if info.get("pv") else None
                         score_i = info['score'].white().score(mate_score=10000)
@@ -80,27 +78,40 @@ class StockfishDualTrainer:
                         scores_np = np.array(scores, dtype=np.float32)
                         temp = 150.0
                         scaled = scores_np / temp
-                        scaled -= np.max(scaled)  # stability trick
+                        scaled -= np.max(scaled)
                         exp_scores = np.exp(scaled)
                         probs = exp_scores / np.sum(exp_scores)
 
                         for move_i, prob in zip(moves, probs):
-                            idx = move_i.from_square * 64 + move_i.to_square
-                            soft_policy[idx] = prob
+                            soft_policy[move_i.from_square, move_i.to_square] = prob
 
-                        # Strongly reweight top move: boost learning signal
-                        top_move_idx = moves[0].from_square * 64 + moves[0].to_square
+                        top_move = moves[0]
                         soft_policy *= 0.8
-                        soft_policy[top_move_idx] += 0.2
+                        soft_policy[top_move.from_square, top_move.to_square] += 0.2
                         soft_policy /= np.sum(soft_policy)
 
-                        # Minimal label smoothing
-                        soft_policy = 0.95 * soft_policy + 0.05 / 4096
+                        epsilon = 1e-5
+                        soft_policy = (1 - epsilon) * soft_policy + epsilon / (64 * 64)
+
+                        # Determine promotion class
+                        if top_move.promotion is None:
+                            promo_class = 0
+                        elif top_move.promotion == chess.QUEEN:
+                            promo_class = 1
+                        elif top_move.promotion == chess.ROOK:
+                            promo_class = 2
+                        elif top_move.promotion == chess.BISHOP:
+                            promo_class = 3
+                        elif top_move.promotion == chess.KNIGHT:
+                            promo_class = 4
+                        else:
+                            promo_class = 0
 
                         state = self._encode_state(board)
                         positions.append({
                             'state': state,
                             'policy': soft_policy,
+                            'promotion': tf.keras.utils.to_categorical(promo_class, num_classes=5),
                             'value': scaled_value
                         })
                 except Exception as e:
@@ -119,7 +130,8 @@ class StockfishDualTrainer:
         }
 
     def _train_on_positions(self, positions: List[Dict]) -> Dict[str, float]:
-        boards, histories, attack_maps, defense_maps, policies, values = [], [], [], [], [], []
+        boards, histories, attack_maps, defense_maps = [], [], [], []
+        policies, promotions, values = [], [], []
 
         for pos in positions:
             s = pos['state']
@@ -128,6 +140,7 @@ class StockfishDualTrainer:
             attack_maps.append(s['attack_map'])
             defense_maps.append(s['defense_map'])
             policies.append(pos['policy'])
+            promotions.append(pos['promotion'])
             values.append(pos['value'])
 
         board_arr = np.array(boards)
@@ -135,17 +148,20 @@ class StockfishDualTrainer:
         attack_arr = np.array(attack_maps)
         defense_arr = np.array(defense_maps)
         policy_arr = np.array(policies)
+        promotion_arr = np.array(promotions)
         value_arr = np.array(values)
 
         print("[Trainer] Training on collected positions...")
-        losses = self.athena.alpha_model.train_on_batch([
-            board_arr, history_arr, attack_arr, defense_arr
-        ], [policy_arr, value_arr])
+        losses = self.athena.model.train_on_batch(
+            [board_arr, history_arr, attack_arr, defense_arr],
+            [policy_arr, promotion_arr, value_arr]
+        )
 
         return {
             'total_loss': float(losses[0]),
             'policy_loss': float(losses[1]),
-            'value_loss': float(losses[2])
+            'promotion_loss': float(losses[2]),
+            'value_loss': float(losses[3])
         }
 
     def __del__(self):

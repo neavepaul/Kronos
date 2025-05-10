@@ -16,6 +16,7 @@ sys.path.append(str(ROOT_PATH))
 
 # Local module imports
 from modules.athena.src.aegis_net import AegisNet
+from modules.athena.src.prometheus_net import PrometheusNet
 from modules.athena.src.hybrid_trainer import HybridTrainer
 from modules.athena.src.evaluate import evaluate_model
 
@@ -26,7 +27,14 @@ STOCKFISH_PATH = ROOT_PATH / "modules/shared/stockfish/stockfish-windows-x86-64-
 class Trainer:
     def __init__(self, weight_path="models/athena_hybrid_stock50self2.weights.h5"):
         # Initialize the neural network and training components
-        self.network = AegisNet()
+        # self.network = AegisNet()
+        self.network = PrometheusNet()
+        self.network([  # builds the model
+            np.zeros((1, 8, 8, 20), dtype=np.float32),
+            np.zeros((1, 50), dtype=np.float32),
+            np.zeros((1, 8, 8), dtype=np.float32),
+            np.zeros((1, 8, 8), dtype=np.float32)
+        ])
         self.hybrid_trainer = HybridTrainer(self.network, str(STOCKFISH_PATH))
         self.weight_path = weight_path
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -46,18 +54,21 @@ class Trainer:
         )
 
         # Compile the model with policy and value heads
-        self.network.alpha_model.compile(
+        self.network.compile(
             optimizer=keras.optimizers.Adam(learning_rate=lr_schedule),
             loss={
                 'policy': 'categorical_crossentropy',
+                'promotion': 'categorical_crossentropy',
                 'value': 'mean_squared_error'
             },
             loss_weights={
                 'policy': 1.0,
+                'promotion': 0.2,
                 'value': 1.0
             },
             metrics={
                 'policy': ['accuracy'],
+                'promotion': ['accuracy'],
                 'value': ['mae']
             }
         )
@@ -67,7 +78,7 @@ class Trainer:
 
         # Save initial model weights
         initial_save_path = MODELS_DIR / f"athena_hybrid_initial_{timestamp}.weights.h5"
-        self.network.alpha_model.save_weights(str(initial_save_path))
+        self.network.save_weights(str(initial_save_path))
         print(f"Saved initial model: {initial_save_path.name}")
 
         # Initialize ELO
@@ -96,7 +107,7 @@ class Trainer:
 
                 # Optionally save model checkpoint
                 # save_path = MODELS_DIR / f"athena_hybrid_iter_{iteration}_{timestamp}.weights.h5"
-                # self.network.alpha_model.save_weights(str(save_path))
+                # self.network.save_weights(str(save_path))
                 # print(f"Saved model checkpoint: {save_path.name}")
 
                 # Update ELO
@@ -113,13 +124,13 @@ class Trainer:
             print(f"\nFinal Model Estimated ELO: {final_elo}")
 
             final_save_path = MODELS_DIR / f"athena_hybrid_final_{timestamp}_elo_{int(final_elo)}.keras"
-            self.network.alpha_model.save(str(final_save_path))
+            self.network.save(str(final_save_path))
             print(f"Saved Final Model: {final_save_path.name}")
 
         except KeyboardInterrupt:
             print("\nTraining interrupted by user. Saving current model...")
             final_save_path = MODELS_DIR / f"athena_hybrid_final_interrupted_{timestamp}.keras"
-            self.network.alpha_model.save(str(final_save_path))
+            self.network.save(str(final_save_path))
             print(f"Saved interrupted model: {final_save_path.name}")
 
         except Exception as e:
