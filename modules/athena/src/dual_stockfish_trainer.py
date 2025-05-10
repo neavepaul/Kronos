@@ -29,7 +29,7 @@ class StockfishDualTrainer:
         self.max_game_length = 160
 
     def train_from_stronger_stockfish(self) -> Dict[str, Any]:
-        print("\n[StockfishDualTrainer] Lv5 vs Lv0 Training Mode (Soft Targets + Eval + Label Smoothing + Top Weight)")
+        print("\n[StockfishDualTrainer] Lv5 vs Lv0 Training Mode (Soft Targets + Eval + Strong Top Weight Boost)")
         all_positions = []
 
         for game_id in range(self.num_games):
@@ -64,14 +64,7 @@ class StockfishDualTrainer:
                     eval_info = engine.analyse(board, chess.engine.Limit(depth=10), multipv=5)
                     cp_score = eval_info[0]['score'].white().score(mate_score=10000)
                     # Scale Stockfish evaluation to [-1, +1] using tanh.
-                    # This smooths out extreme values (> ±400 centipawns), reduces gradient noise,
-                    # and helps the model focus on positional quality rather than exact score magnitude.
                     scaled_value = np.tanh(cp_score / 400.0)
-
-                    # # Optional: skip low-signal positions
-                    # if abs(scaled_value) < 0.05:
-                    #     board.push(move)
-                    #     continue
 
                     soft_policy = np.zeros(4096, dtype=np.float32)
                     scores = []
@@ -83,7 +76,6 @@ class StockfishDualTrainer:
                             moves.append(move_i)
                             scores.append(score_i)
 
-                    # Normalize scores using stable softmax
                     if moves and scores:
                         scores_np = np.array(scores, dtype=np.float32)
                         temp = 150.0
@@ -96,14 +88,14 @@ class StockfishDualTrainer:
                             idx = move_i.from_square * 64 + move_i.to_square
                             soft_policy[idx] = prob
 
-                        # Reinject weight into top move
+                        # Strongly reweight top move: boost learning signal
                         top_move_idx = moves[0].from_square * 64 + moves[0].to_square
-                        soft_policy[top_move_idx] += 0.1
+                        soft_policy *= 0.8
+                        soft_policy[top_move_idx] += 0.2
                         soft_policy /= np.sum(soft_policy)
 
                         # Minimal label smoothing
-                        epsilon = 1e-5
-                        soft_policy = (1 - epsilon) * soft_policy + epsilon / 4096
+                        soft_policy = 0.95 * soft_policy + 0.05 / 4096
 
                         state = self._encode_state(board)
                         positions.append({
